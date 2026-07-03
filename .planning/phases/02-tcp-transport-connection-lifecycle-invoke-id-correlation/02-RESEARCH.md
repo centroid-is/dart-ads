@@ -509,18 +509,21 @@ test('correlates reordered responses by invoke-ID', () async {
 | A4 | The connection holds a fixed source/target `AmsAddr` injected at construction (Phase-4 router will supply per-NetId) | Pattern 5 | Low — addressing policy is a Phase-4 concern; Phase 2 only needs *some* valid addressing to round-trip against the mock |
 | A5 | `--delay-ms` semantics = defer FIRST response, flush LAST (vs literal per-response jitter) | Mock section | Low — matches focus-question 3 guidance and is strictly more deterministic than jitter; confirm the flag name/semantics with the planner |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Does `AmsConnection.request` decode to a typed `AdsResponse` or return raw bytes?**
    - What we know: Phase 3 owns per-command decoding + ADS errorCode→exception mapping (ERR-01, Phase 3).
    - What's unclear: whether Phase 2 returns raw `Uint8List` payload or a `(AmsHeader, Uint8List)` record.
    - Recommendation: return raw payload (or a small record) and keep L4 command-agnostic (Assumption A3). Cheap to change later.
+   - RESOLVED: raw `Uint8List` payload — Plan 02-03 implements this; Phase 3 owns typed decode.
 
 2. **Mock addressing for live round-trips.** The Phase-1 mock passes request addressing through un-swapped (matched the golden). For realistic responses the mock should invert addressing (target↔source) as noted in its own comments.
    - Recommendation: have the Phase-2 mock work invert addressing on response (as `AmsConnection._onFrame` doesn't care about addressing for correlation, this is cosmetic for Phase 2 but correct for later phases). Low risk either way since correlation keys on invokeId+commandId.
+   - RESOLVED: mock inverts addressing on response (already fixed in Phase 1 WR-06; Plan 02-02 keeps it) — cosmetic for Phase 2.
 
 3. **CI wording.** The integration job currently runs full `dart test` (which already includes integration-tagged tests). The locked decision says "run `dart test -t integration`."
    - Recommendation: either is fine; full `dart test` already covers them. If the planner wants the exact wording, add a `dart test -t integration` step or leave the existing full-suite step. No new workflow file needed.
+   - RESOLVED: no CI workflow change; the existing integration job's full `dart test` covers integration-tagged tests (Plan 02-04 objective).
 
 ## Environment Availability
 
