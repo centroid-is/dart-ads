@@ -207,4 +207,55 @@ void main() {
       );
     });
   });
+
+  group('encode range validation (WR-04)', () {
+    // ByteData.setUint16/setUint32 silently truncate to the low bits
+    // (70000 -> 4464), so out-of-range values must be rejected at the API
+    // boundary instead of producing a well-formed but WRONG frame.
+    test('AmsAddr rejects a port that does not fit u16', () {
+      final id = AmsNetId.parse('192.168.0.1.1.1');
+      expect(() => AmsAddr(id, 70000), throwsArgumentError);
+      expect(() => AmsAddr(id, -1), throwsArgumentError);
+      expect(AmsAddr(id, 0).port, equals(0));
+      expect(AmsAddr(id, 0xFFFF).port, equals(0xFFFF));
+    });
+
+    test('AmsHeader.encode rejects out-of-range fields instead of truncating',
+        () {
+      AmsHeader header({
+        int targetPort = 851,
+        int commandId = AdsCommandId.readDeviceInfo,
+        int dataLength = 0,
+        int invokeId = 1,
+      }) =>
+          AmsHeader(
+            targetNetId: AmsNetId.parse('192.168.0.1.1.1'),
+            targetPort: targetPort,
+            sourceNetId: AmsNetId.parse('192.168.0.100.1.1'),
+            sourcePort: 40001,
+            commandId: commandId,
+            stateFlags: AmsStateFlags.request,
+            dataLength: dataLength,
+            errorCode: 0,
+            invokeId: invokeId,
+          );
+
+      expect(() => header(targetPort: 70000).encode(), throwsArgumentError,
+          reason: 'port 70000 must not silently become 4464 on the wire');
+      expect(() => header(commandId: -1).encode(), throwsArgumentError);
+      expect(() => header(dataLength: -1).encode(), throwsArgumentError);
+      expect(() => header(invokeId: 0x100000000).encode(), throwsArgumentError,
+          reason: 'a 33-bit invokeId counter wrap must fail, not truncate');
+      expect(header().encode().length, equals(AmsHeader.byteLength));
+    });
+
+    test('AmsTcpHeader.encode rejects a length that does not fit u32', () {
+      expect(
+          () => const AmsTcpHeader(length: -1).encode(), throwsArgumentError);
+      expect(() => const AmsTcpHeader(length: 0x100000000).encode(),
+          throwsArgumentError);
+      expect(const AmsTcpHeader(length: 0xFFFFFFFF).encode().length,
+          equals(AmsTcpHeader.byteLength));
+    });
+  });
 }

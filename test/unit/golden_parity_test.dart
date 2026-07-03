@@ -186,4 +186,64 @@ void main() {
       expect(res.data, equals(_u32le(0x80000001)));
     });
   });
+
+  group('encoder range validation (WR-04)', () {
+    test('out-of-range integer fields throw instead of silently truncating',
+        () {
+      // ByteData.setUint32 stores only the low 32 bits, so without validation
+      // these would emit well-formed frames carrying WRONG field values.
+      expect(
+        () => encodeReadRequest(
+          target: _target,
+          source: _source,
+          invokeId: _invokeId,
+          indexGroup: 0xF005,
+          indexOffset: 0x123,
+          length: -1,
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => encodeReadRequest(
+          target: _target,
+          source: _source,
+          invokeId: _invokeId,
+          indexGroup: 0x100000000, // 33 bits
+          indexOffset: 0,
+          length: 4,
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => encodeReadDeviceInfoRequest(
+          target: _target,
+          source: _source,
+          invokeId: 0x100000000, // 33-bit invoke-id counter wrap
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => encodeWriteControlRequest(
+          target: _target,
+          source: _source,
+          invokeId: _invokeId,
+          adsState: 0x10000, // 17 bits: would truncate to 0
+          deviceState: 0,
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => encodeReadWriteRequest(
+          target: _target,
+          source: _source,
+          invokeId: _invokeId,
+          indexGroup: 0xF003,
+          indexOffset: 0,
+          readLength: -4,
+          writeData: Uint8List(0),
+        ),
+        throwsArgumentError,
+      );
+    });
+  });
 }

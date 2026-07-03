@@ -1,9 +1,12 @@
 /// The [AmsTcpHeader] — the 6-byte AMS/TCP frame wrapper.
 ///
-/// Pure: imports only `dart:typed_data`. No `dart:async` / `dart:io`.
+/// Pure: imports only `dart:typed_data` (plus the local, pure range check).
+/// No `dart:async` / `dart:io`.
 library;
 
 import 'dart:typed_data';
+
+import 'range_check.dart';
 
 /// The 6-byte AMS/TCP wrapper that prefixes every AMS frame on the wire.
 ///
@@ -29,11 +32,14 @@ class AmsTcpHeader {
   const AmsTcpHeader({required this.length});
 
   /// Encodes this wrapper to its 6 little-endian bytes.
+  ///
+  /// Throws [ArgumentError] if [length] does not fit the u32 wire field
+  /// (rather than silently truncating to the low 32 bits).
   Uint8List encode() {
     final out = Uint8List(byteLength);
     final bd = ByteData.sublistView(out);
     bd.setUint16(0, 0, Endian.little); // reserved, always 0
-    bd.setUint32(2, length, Endian.little);
+    bd.setUint32(2, checkUint(length, 32, 'length'), Endian.little);
     return out;
   }
 

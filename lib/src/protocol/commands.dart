@@ -24,6 +24,7 @@ import 'ams_net_id.dart';
 import 'ams_tcp_header.dart';
 import 'constants.dart';
 import 'exceptions.dart';
+import 'range_check.dart';
 
 // ---------------------------------------------------------------------------
 // Response value types
@@ -172,9 +173,9 @@ Uint8List encodeReadRequest({
 }) {
   final payload = Uint8List(12);
   final bd = ByteData.sublistView(payload);
-  bd.setUint32(0, indexGroup, Endian.little);
-  bd.setUint32(4, indexOffset, Endian.little);
-  bd.setUint32(8, length, Endian.little);
+  bd.setUint32(0, checkUint(indexGroup, 32, 'indexGroup'), Endian.little);
+  bd.setUint32(4, checkUint(indexOffset, 32, 'indexOffset'), Endian.little);
+  bd.setUint32(8, checkUint(length, 32, 'length'), Endian.little);
   return _frame(
     target: target,
     source: source,
@@ -195,9 +196,9 @@ Uint8List encodeWriteRequest({
 }) {
   final payload = Uint8List(12 + data.length);
   final bd = ByteData.sublistView(payload);
-  bd.setUint32(0, indexGroup, Endian.little);
-  bd.setUint32(4, indexOffset, Endian.little);
-  bd.setUint32(8, data.length, Endian.little);
+  bd.setUint32(0, checkUint(indexGroup, 32, 'indexGroup'), Endian.little);
+  bd.setUint32(4, checkUint(indexOffset, 32, 'indexOffset'), Endian.little);
+  bd.setUint32(8, checkUint(data.length, 32, 'data.length'), Endian.little);
   payload.setRange(12, 12 + data.length, data);
   return _frame(
     target: target,
@@ -235,9 +236,9 @@ Uint8List encodeWriteControlRequest({
   final body = data ?? _empty;
   final payload = Uint8List(8 + body.length);
   final bd = ByteData.sublistView(payload);
-  bd.setUint16(0, adsState, Endian.little);
-  bd.setUint16(2, deviceState, Endian.little);
-  bd.setUint32(4, body.length, Endian.little);
+  bd.setUint16(0, checkUint(adsState, 16, 'adsState'), Endian.little);
+  bd.setUint16(2, checkUint(deviceState, 16, 'deviceState'), Endian.little);
+  bd.setUint32(4, checkUint(body.length, 32, 'data.length'), Endian.little);
   payload.setRange(8, 8 + body.length, body);
   return _frame(
     target: target,
@@ -261,10 +262,11 @@ Uint8List encodeReadWriteRequest({
 }) {
   final payload = Uint8List(16 + writeData.length);
   final bd = ByteData.sublistView(payload);
-  bd.setUint32(0, indexGroup, Endian.little);
-  bd.setUint32(4, indexOffset, Endian.little);
-  bd.setUint32(8, readLength, Endian.little);
-  bd.setUint32(12, writeData.length, Endian.little);
+  bd.setUint32(0, checkUint(indexGroup, 32, 'indexGroup'), Endian.little);
+  bd.setUint32(4, checkUint(indexOffset, 32, 'indexOffset'), Endian.little);
+  bd.setUint32(8, checkUint(readLength, 32, 'readLength'), Endian.little);
+  bd.setUint32(
+      12, checkUint(writeData.length, 32, 'writeData.length'), Endian.little);
   payload.setRange(16, 16 + writeData.length, writeData);
   return _frame(
     target: target,

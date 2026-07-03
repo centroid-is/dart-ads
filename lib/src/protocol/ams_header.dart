@@ -8,6 +8,7 @@ import 'dart:typed_data';
 
 import 'ams_net_id.dart';
 import 'exceptions.dart';
+import 'range_check.dart';
 
 /// The 32-byte AMS header that follows the [AmsTcpHeader] wrapper on the wire.
 ///
@@ -70,18 +71,22 @@ class AmsHeader {
   });
 
   /// Encodes this header to its 32 little-endian bytes.
+  ///
+  /// Throws [ArgumentError] if any integer field does not fit its wire width
+  /// (`ByteData.setUint16`/`setUint32` would otherwise silently truncate to
+  /// the low bits, emitting a well-formed but wrong frame).
   Uint8List encode() {
     final out = Uint8List(byteLength);
     final bd = ByteData.sublistView(out);
     out.setRange(0, 6, targetNetId.bytes);
-    bd.setUint16(6, targetPort, Endian.little);
+    bd.setUint16(6, checkUint(targetPort, 16, 'targetPort'), Endian.little);
     out.setRange(8, 14, sourceNetId.bytes);
-    bd.setUint16(14, sourcePort, Endian.little);
-    bd.setUint16(16, commandId, Endian.little);
-    bd.setUint16(18, stateFlags, Endian.little);
-    bd.setUint32(20, dataLength, Endian.little);
-    bd.setUint32(24, errorCode, Endian.little);
-    bd.setUint32(28, invokeId, Endian.little);
+    bd.setUint16(14, checkUint(sourcePort, 16, 'sourcePort'), Endian.little);
+    bd.setUint16(16, checkUint(commandId, 16, 'commandId'), Endian.little);
+    bd.setUint16(18, checkUint(stateFlags, 16, 'stateFlags'), Endian.little);
+    bd.setUint32(20, checkUint(dataLength, 32, 'dataLength'), Endian.little);
+    bd.setUint32(24, checkUint(errorCode, 32, 'errorCode'), Endian.little);
+    bd.setUint32(28, checkUint(invokeId, 32, 'invokeId'), Endian.little);
     return out;
   }
 

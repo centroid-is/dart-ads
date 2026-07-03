@@ -7,6 +7,7 @@ library;
 import 'dart:typed_data';
 
 import 'exceptions.dart';
+import 'range_check.dart';
 
 /// An immutable 6-byte AMS Net ID (e.g. `192.168.0.1.1.1`).
 ///
@@ -92,7 +93,13 @@ class AmsNetId {
 /// An immutable AMS address: an [AmsNetId] paired with a u16 [port].
 class AmsAddr {
   /// Creates an AMS address from a [netId] and a [port] (0..65535).
-  const AmsAddr(this.netId, this.port);
+  ///
+  /// Throws [ArgumentError] if [port] does not fit a u16 — a silently
+  /// truncated port (e.g. 70000 -> 4464 on the wire) would address the wrong
+  /// ADS service.
+  AmsAddr(this.netId, this.port) {
+    checkUint(port, 16, 'port');
+  }
 
   /// The AMS Net ID of this address.
   final AmsNetId netId;
