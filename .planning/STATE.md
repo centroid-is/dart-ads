@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: ROADMAP.md and STATE.md written; REQUIREMENTS.md traceability populated.
-last_updated: "2026-07-03T17:41:26.663Z"
+last_updated: "2026-07-03T18:17:23.294Z"
 last_activity: 2026-07-03
 progress:
   total_phases: 9
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 7
-  completed_plans: 1
-  percent: 0
+  completed_plans: 7
+  percent: 11
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-07-03)
 ## Current Position
 
 Phase: 01 (Protocol Framing, Codecs & C++ Golden-Frame Harness) — EXECUTING
-Plan: 2 of 7
+Plan: 3 of 7
 Status: Ready to execute
 Last activity: 2026-07-03
 
-Progress: [█░░░░░░░░░] 14%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -53,6 +53,7 @@ Progress: [█░░░░░░░░░] 14%
 
 *Updated after each plan completion*
 | Phase 01 P01 | 2min | 3 tasks | 10 files |
+| Phase 01 P07 | 4min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -65,6 +66,8 @@ Recent decisions affecting current work:
 - Roadmap: C++ CMake mock + golden-frame harness comes online in Phase 1 so codec parity is validated before any socket code exists.
 - Roadmap: notifications (Phase 5) and sum commands (Phase 6) split into independent branches on top of Phase 4 (fine granularity, parallelizable).
 - [Phase 01]: Pinned Beckhoff/ADS submodule to verified commit 57d63747; re-verify the 4-source build recipe before any re-pin — Reproducible mock-server/dumper build; RESEARCH verified this exact commit compiles
+- [Phase ?]: [Phase 01]: Public barrel uses intentional 'export ... show' clauses so internal helpers stay library-private (T-1-EXP).
+- [Phase ?]: [Phase 01]: 2-job CI is the Phase 2 gate — fast pure-Dart matrix + Linux CMake harness with golden-reproducibility and endian grep gate; no secrets.
 
 ### Pending Todos
 
@@ -88,6 +91,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-03T17:40:40.795Z
+Last session: 2026-07-03T18:16:55.640Z
 Stopped at: ROADMAP.md and STATE.md written; REQUIREMENTS.md traceability populated.
 Resume file: None

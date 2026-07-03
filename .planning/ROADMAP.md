@@ -12,7 +12,7 @@ dart-ads is built bottom-up along a strict, technically load-bearing dependency 
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Protocol Framing, Codecs & C++ Golden-Frame Harness** - Byte-accurate AMS codec + CMake mock/golden harness proving encode/decode parity
+- [x] **Phase 1: Protocol Framing, Codecs & C++ Golden-Frame Harness** - Byte-accurate AMS codec + CMake mock/golden harness proving encode/decode parity (completed 2026-07-03)
 - [ ] **Phase 2: TCP Transport, Connection Lifecycle & Invoke-ID Correlation** - Live socket, request/response correlation, and disconnect fan-out
 - [ ] **Phase 3: Core ADS Commands & Error Mapping** - Read/Write/ReadWrite/ReadState/WriteControl/ReadDeviceInfo with typed exceptions
 - [ ] **Phase 4: AmsRouter & Direct / Local-Router Transport Modes** - NetId routing, runtime transport selection, and actionable 1861 route errors
@@ -40,7 +40,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   - [x] 01-04-PLAN.md — Dart codec core: constants, NetId/Addr, AMS/TCP + AMS header codecs (wave 2)
   - [x] 01-05-PLAN.md — Per-command codecs + byte-for-byte golden parity tests (wave 3)
   - [x] 01-06-PLAN.md — FrameAssembler + fragment/coalesce/max-frame-guard tests (wave 3)
-  - [ ] 01-07-PLAN.md — Public API barrel + 2-job CI (Phase 2 gate) (wave 4)
+  - [x] 01-07-PLAN.md — Public API barrel + 2-job CI (Phase 2 gate) (wave 4)
 **Research**: NEEDS RESEARCH — exact AdsLib public-header surface usable from a C++ server role (which structs are includable without private headers) and cross-platform CMake build correctness (macOS dev vs Linux CI) need hands-on verification before Phase 2.
 **UI hint**: no
 
@@ -150,7 +150,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Protocol Framing, Codecs & Golden-Frame Harness | 6/7 | In Progress|  |
+| 1. Protocol Framing, Codecs & Golden-Frame Harness | 7/7 | Complete   | 2026-07-03 |
 | 2. TCP Transport, Lifecycle & Correlation | 0/TBD | Not started | - |
 | 3. Core ADS Commands & Error Mapping | 0/TBD | Not started | - |
 | 4. AmsRouter & Transport Modes | 0/TBD | Not started | - |
