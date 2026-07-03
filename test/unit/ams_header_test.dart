@@ -178,5 +178,33 @@ void main() {
       final decoded = AmsHeader.decode(ByteData.sublistView(buf), 6);
       expect(decoded, equals(_anchorHeader()));
     });
+
+    test(
+        'decode never escapes a short ByteData view, even when the backing '
+        'buffer holds more bytes past the view (WR-03)', () {
+      // A 16-byte clamped view over a 64-byte backing buffer whose bytes
+      // BEYOND the view would decode as a plausible header. Reads must be
+      // range-checked against the view, not the buffer, so this throws the
+      // typed exception — never a RangeError, never a garbage header built
+      // from adjacent buffer contents.
+      final backing = Uint8List(64)
+        ..setRange(0, _anchorAmsHeaderBytes.length, _anchorAmsHeaderBytes);
+      final shortView = ByteData.sublistView(backing, 0, 16);
+
+      expect(
+        () => AmsHeader.decode(shortView),
+        throwsA(isA<MalformedFrameException>()
+            .having((e) => e.length, 'length', 16)),
+        reason: '16 available bytes < the required 32 must be a typed error',
+      );
+
+      // Same guard for a non-zero offset that leaves too few view bytes.
+      final fullView = ByteData.sublistView(backing, 0, AmsHeader.byteLength);
+      expect(
+        () => AmsHeader.decode(fullView, 6),
+        throwsA(isA<MalformedFrameException>()),
+        reason: 'offset 6 leaves 26 view bytes < 32',
+      );
+    });
   });
 }

@@ -1,12 +1,13 @@
 /// The [AmsHeader] — the 32-byte AMS header codec.
 ///
-/// Pure: imports only `dart:typed_data` (plus the local, pure [AmsNetId]).
-/// No `dart:async` / `dart:io`.
+/// Pure: imports only `dart:typed_data` (plus the local, pure [AmsNetId] and
+/// [MalformedFrameException]). No `dart:async` / `dart:io`.
 library;
 
 import 'dart:typed_data';
 
 import 'ams_net_id.dart';
+import 'exceptions.dart';
 
 /// The 32-byte AMS header that follows the [AmsTcpHeader] wrapper on the wire.
 ///
@@ -86,16 +87,30 @@ class AmsHeader {
 
   /// Decodes an [AmsHeader] from [bd] starting at [offset].
   ///
-  /// The caller must guarantee at least [byteLength] bytes are available from
-  /// [offset]; decode reads fixed offsets and never indexes past its declared
-  /// width (threat T-1-03).
+  /// Throws [MalformedFrameException] if fewer than [byteLength] bytes are
+  /// available in the view from [offset]. Every read stays inside the [bd]
+  /// view itself — never the (possibly larger) buffer backing it — so a
+  /// clamped view over a bigger receive buffer can never silently yield
+  /// adjacent, unrelated bytes (threat T-1-03).
   factory AmsHeader.decode(ByteData bd, [int offset = 0]) {
-    final base = bd.offsetInBytes + offset;
+    final available = bd.lengthInBytes - offset;
+    if (offset < 0 || available < byteLength) {
+      throw MalformedFrameException(
+        'AmsHeader requires $byteLength bytes at offset $offset, '
+        'got $available',
+        length: available,
+        offset: offset,
+      );
+    }
+    // Range-checked against the VIEW (unlike bd.buffer.asUint8List, which
+    // resolves against the underlying buffer and can escape the view bounds).
+    final view = Uint8List.sublistView(bd, offset, offset + byteLength);
     return AmsHeader(
-      targetNetId: AmsNetId(bd.buffer.asUint8List(base, AmsNetId.byteLength)),
+      targetNetId:
+          AmsNetId(Uint8List.sublistView(view, 0, AmsNetId.byteLength)),
       targetPort: bd.getUint16(offset + 6, Endian.little),
       sourceNetId:
-          AmsNetId(bd.buffer.asUint8List(base + 8, AmsNetId.byteLength)),
+          AmsNetId(Uint8List.sublistView(view, 8, 8 + AmsNetId.byteLength)),
       sourcePort: bd.getUint16(offset + 14, Endian.little),
       commandId: bd.getUint16(offset + 16, Endian.little),
       stateFlags: bd.getUint16(offset + 18, Endian.little),
