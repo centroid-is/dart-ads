@@ -52,6 +52,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cerrno>
+#include <csignal>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -209,11 +210,19 @@ static int runSelftest(const std::string& goldenPath)
 enum class TransmitMode { Normal, Fragment, Coalesce };
 
 // Blocking write of the whole buffer in a single logical response.
+//
+// A send() interrupted by a signal returns -1/EINTR — retry, it is not an
+// error. A peer that closed mid-response yields EPIPE (reachable because
+// main() ignores SIGPIPE), which reports as failure so the caller drops the
+// connection instead of the whole process dying.
 static bool sendAll(int fd, const uint8_t* data, size_t size)
 {
     size_t sent = 0;
     while (sent < size) {
         const ssize_t n = send(fd, data + sent, size - sent, 0);
+        if (n < 0 && errno == EINTR) {
+            continue;
+        }
         if (n <= 0) {
             return false;
         }
@@ -369,6 +378,15 @@ static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN)
 // ---- argv parsing ----------------------------------------------------------
 int main(int argc, char** argv)
 {
+    // A client that disconnects mid-send (test teardown, a crashed Dart test,
+    // a timeout kill) must not kill the server: without this, send() to a
+    // closed peer raises SIGPIPE, whose default disposition terminates the
+    // whole process — listening socket included, so every later test hangs.
+    // signal(SIGPIPE, SIG_IGN) is portable across Linux + macOS (macOS lacks
+    // MSG_NOSIGNAL); with SIGPIPE ignored, send() fails with EPIPE and
+    // sendAll's error path drops just that connection.
+    signal(SIGPIPE, SIG_IGN);
+
     int fixedPort = 0; // 0 => ephemeral
     TransmitMode mode = TransmitMode::Normal;
     size_t fragmentN = 0;
