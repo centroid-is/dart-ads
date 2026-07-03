@@ -184,6 +184,42 @@ void main() {
     });
   });
 
+  group('encode throw', () {
+    test(
+        'a sync ArgumentError from encode leaves no pending state behind '
+        '(no armed timer, no unhandled async error)', () async {
+      final fake = FakeTransport();
+      final conn = newConnection(fake);
+      await conn.connect('fake', 0);
+
+      // 0x10000 is outside u16, so AmsHeader.encode's range check throws a
+      // SYNCHRONOUS ArgumentError. Regression (CR-01): the pending entry used
+      // to be registered before the frame was built, leaving an orphaned
+      // completer whose timer later fired an unhandled async error.
+      expect(
+        () => conn.request(
+          0x10000,
+          Uint8List(0),
+          timeout: const Duration(milliseconds: 20),
+        ),
+        throwsArgumentError,
+      );
+      expect(fake.written, isEmpty, reason: 'nothing was sent');
+
+      // Outlive the would-be timeout window: with the leak, the orphaned
+      // timer fires here and the unhandled async error fails this test.
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+
+      // The connection is still fully usable and correlation is unharmed.
+      final resp = Uint8List.fromList([7]);
+      final f = conn.request(0x02, Uint8List(0));
+      final id = outboundInvokeId(fake.written.single);
+      fake.feed(buildFrame(invokeId: id, commandId: 0x02, payload: resp));
+      expect(await f, equals(resp));
+      expect(conn.droppedResponses, 0);
+    });
+  });
+
   group('notification', () {
     test('cmd 0x08 frame routes to demux, not the pending map', () async {
       final fake = FakeTransport();

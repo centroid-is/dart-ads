@@ -131,6 +131,12 @@ class AmsConnection {
       throw const AdsConnectionException('not connected');
     }
     final id = _allocInvokeId();
+    // Build (and range-check) the frame BEFORE registering any pending state:
+    // encode throws a synchronous ArgumentError for out-of-range fields (e.g.
+    // a commandId outside u16), and a throw here must leave nothing behind —
+    // no orphaned completer whose armed Timer would later fire an unhandled
+    // async error (CR-01).
+    final frame = _buildFrame(commandId, id, payload);
     final completer = Completer<Uint8List>();
     final timer = Timer(timeout ?? _defaultTimeout, () {
       // remove-wins: null if the response already claimed this request.
@@ -138,7 +144,15 @@ class AmsConnection {
       pending?.completer.completeError(AdsTimeoutException(id, commandId));
     });
     _pending[id] = PendingRequest(completer, timer, commandId);
-    _transport.add(_buildFrame(commandId, id, payload));
+    try {
+      _transport.add(frame);
+    } catch (_) {
+      // Defense against a transport whose add() throws synchronously: undo the
+      // registration so the sync throw leaves no armed timer behind.
+      _pending.remove(id);
+      timer.cancel();
+      rethrow;
+    }
     return completer.future;
   }
 
