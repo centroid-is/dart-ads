@@ -1,6 +1,68 @@
 /// Pure-Dart client library for the Beckhoff ADS protocol (AMS/TCP).
 ///
-/// Public exports are finalized in a later plan once the protocol types
-/// exist; this barrel is intentionally export-free for now to keep
-/// intermediate waves analyzer-clean.
+/// This barrel is the package's curated public surface. It re-exports only the
+/// protocol codec types a consumer needs to build and parse AMS/TCP frames:
+/// the address value types, the three fixed-layout headers, the six per-command
+/// request encoders and typed response decoders, the streaming frame
+/// reassembler, the framing exception, and the wire-protocol constants.
+///
+/// Everything under `src/` that is not re-exported here (internal helpers such
+/// as the frame composer and the C-string/length-guard utilities) stays private
+/// to the package — those symbols are library-private in their source files and
+/// are intentionally not part of the public contract.
 library;
+
+/// AMS address value types: the 6-byte [AmsNetId] and the [AmsAddr]
+/// (net id + u16 port) pair.
+export 'src/protocol/ams_net_id.dart' show AmsNetId, AmsAddr;
+
+/// The 6-byte AMS/TCP frame wrapper.
+export 'src/protocol/ams_tcp_header.dart' show AmsTcpHeader;
+
+/// The 32-byte AMS header codec.
+export 'src/protocol/ams_header.dart' show AmsHeader;
+
+/// The six core ADS commands: request encoders and their typed response
+/// decoders, plus the sealed [AdsResponse] hierarchy.
+export 'src/protocol/commands.dart'
+    show
+        // Sealed response hierarchy.
+        AdsResponse,
+        ReadDeviceInfoResponse,
+        ReadResponse,
+        WriteResponse,
+        ReadStateResponse,
+        WriteControlResponse,
+        ReadWriteResponse,
+        // Request encoders.
+        encodeReadDeviceInfoRequest,
+        encodeReadRequest,
+        encodeWriteRequest,
+        encodeReadStateRequest,
+        encodeWriteControlRequest,
+        encodeReadWriteRequest,
+        // Response decoders.
+        decodeReadDeviceInfoResponse,
+        decodeReadResponse,
+        decodeWriteResponse,
+        decodeReadStateResponse,
+        decodeWriteControlResponse,
+        decodeReadWriteResponse;
+
+/// The streaming AMS/TCP frame reassembler.
+export 'src/protocol/frame_assembler.dart' show FrameAssembler;
+
+/// The wire-level framing exception.
+export 'src/protocol/exceptions.dart' show MalformedFrameException;
+
+/// Wire-protocol constants (command IDs, state flags, ports, index groups,
+/// device-data offsets, run states, error codes).
+export 'src/protocol/constants.dart'
+    show
+        AdsCommandId,
+        AmsStateFlags,
+        AmsPort,
+        AdsIndexGroup,
+        AdsDeviceDataOffset,
+        AdsState,
+        AdsError;
