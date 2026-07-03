@@ -41,4 +41,8 @@ target_compile_definitions(ads_framing PUBLIC CONFIG_DEFAULT_LOGLEVEL=1)
 add_executable(dump_golden dump_golden.cpp)
 target_link_libraries(dump_golden PRIVATE ads_framing)
 
-# NOTE: the mock_server target is added in plan 01-03; do not reference it here.
+# Mock ADS server: hand-rolled POSIX accept loop that reuses the same AmsHeader.h
+# framing structs (via ads_framing) to answer ReadDeviceInfo byte-accurately, plus
+# --fragment/--coalesce transmission modes and a --selftest byte-accuracy gate.
+add_executable(mock_server mock_server.cpp)
+target_link_libraries(mock_server PRIVATE ads_framing)
