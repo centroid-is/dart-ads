@@ -1,0 +1,13 @@
+# Dart / pub
+.dart_tool/
+.packages
+build/
+
+# Library packages should not commit the lockfile.
+pubspec.lock
+
+# Test / coverage output
+coverage/
+
+# CMake harness build output (test_harness/)
+test_harness/build/

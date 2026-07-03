@@ -1,0 +1,6 @@
+# Exclude the C++ golden-frame harness, vendored reference sources, and
+# planning artifacts from the published pub.dev package. None of these are
+# needed by consumers of the pure-Dart library.
+test_harness/
+third_party/
+.planning/
