@@ -32,7 +32,8 @@ Uint8List _u32le(int value) {
 
 /// Strips the 6-byte AMS/TCP wrapper + 32-byte AMS header off a full golden
 /// response [frame] and returns the trailing ADS payload, asserting the wrapper
-/// length, command id, response state flags, and dataLength are self-consistent.
+/// length, command id, response state flags, response addressing, and
+/// dataLength are self-consistent.
 Uint8List _adsResponsePayload(Uint8List frame, int expectedCommandId) {
   final tcp = AmsTcpHeader.decode(ByteData.sublistView(frame));
   expect(tcp.length, equals(frame.length - AmsTcpHeader.byteLength),
@@ -42,6 +43,16 @@ Uint8List _adsResponsePayload(Uint8List frame, int expectedCommandId) {
       AmsHeader.decode(ByteData.sublistView(frame), AmsTcpHeader.byteLength);
   expect(ams.commandId, equals(expectedCommandId));
   expect(ams.stateFlags, equals(AmsStateFlags.response));
+
+  // A response INVERTS the request's addressing (WR-06): it travels to the
+  // original source (the client, _source) from the original target (the
+  // PLC, _target).
+  expect(ams.targetNetId, equals(_source.netId),
+      reason: 'response target must be the request source (the client)');
+  expect(ams.targetPort, equals(_source.port));
+  expect(ams.sourceNetId, equals(_target.netId),
+      reason: 'response source must be the request target (the PLC)');
+  expect(ams.sourcePort, equals(_target.port));
 
   const payloadStart = AmsTcpHeader.byteLength + AmsHeader.byteLength;
   expect(ams.dataLength, equals(frame.length - payloadStart),

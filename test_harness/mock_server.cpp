@@ -191,8 +191,11 @@ static void printHex(const std::vector<uint8_t>& bytes)
 // ---- --selftest: byte-accuracy gate without a socket -----------------------
 static int runSelftest(const std::string& goldenPath)
 {
+    // The golden response is addressed like a real ADS response: TO the
+    // client (kSource identities) FROM the PLC (kTarget identities) — the
+    // inverse of the request addressing.
     const std::vector<uint8_t> got =
-        buildReadDeviceInfoRes(kTarget, kTargetPort, kSource, kSourcePort, kGoldenInvokeId);
+        buildReadDeviceInfoRes(kSource, kSourcePort, kTarget, kTargetPort, kGoldenInvokeId);
 
     std::vector<uint8_t> golden;
     if (!readGoldenHex(goldenPath, golden)) {
@@ -362,10 +365,12 @@ static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN)
                     const AoEHeader aoe(inbuf.data() + sizeof(AmsTcpHeader));
                     switch (aoe.cmdId()) {
                     case AoEHeader::READ_DEVICE_INFO: {
-                        // Respond echoing the request addressing + invokeId.
+                        // Response addressing INVERTS the request's:
+                        // target = request source (the client),
+                        // source = request target (the PLC/us).
                         const std::vector<uint8_t> res = buildReadDeviceInfoRes(
-                            aoe.targetAddr(), aoe.targetPort(), aoe.sourceAddr(),
-                            aoe.sourcePort(), aoe.invokeId());
+                            aoe.sourceAddr(), aoe.sourcePort(), aoe.targetAddr(),
+                            aoe.targetPort(), aoe.invokeId());
                         sendResponse(fd, res, mode, fragmentN, coalesceBuf);
                         break;
                     }

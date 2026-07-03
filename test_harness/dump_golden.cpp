@@ -66,10 +66,17 @@ static const size_t kStateFlagsInAms = 18;
 // Wrap an ADS-payload Frame in the 32-byte AoEHeader and 6-byte AmsTcpHeader
 // (exactly mirroring AmsConnection::Write: prepend<AoEHeader> then
 // prepend<AmsTcpHeader>{frame.size()} so the wrapper length = 32 + payload).
+//
+// A real ADS response inverts the request's addressing: it travels TO the
+// original source (the client) FROM the original target (the PLC). Requests
+// are addressed target=kTarget/source=kSource; responses swap the pair.
 static std::vector<uint8_t> wrap(Frame& f, uint16_t cmdId, bool isResponse)
 {
-    const AoEHeader aoe(kTarget, kTargetPort, kSource, kSourcePort, cmdId,
-                        static_cast<uint32_t>(f.size()), kInvokeId);
+    const AoEHeader aoe = isResponse
+        ? AoEHeader(kSource, kSourcePort, kTarget, kTargetPort, cmdId,
+                    static_cast<uint32_t>(f.size()), kInvokeId)
+        : AoEHeader(kTarget, kTargetPort, kSource, kSourcePort, cmdId,
+                    static_cast<uint32_t>(f.size()), kInvokeId);
     f.prepend<AoEHeader>(aoe);
     f.prepend<AmsTcpHeader>(AmsTcpHeader{ static_cast<uint32_t>(f.size()) });
 
