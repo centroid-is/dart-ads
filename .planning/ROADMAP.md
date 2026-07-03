@@ -33,7 +33,14 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. The Dart codec encodes AMS/TCP (6-byte) and AMS (32-byte) headers, all fields little-endian, that match the C++ golden frames byte-for-byte
   3. The Dart codec decodes golden response frames back to typed values, giving round-trip parity for encode AND decode
   4. The FrameAssembler reassembles a deliberately fragmented and coalesced golden byte stream into complete AMS frames and rejects any frame exceeding the max-frame guard
-**Plans**: TBD
+**Plans**: 7 plans in 4 waves
+  - [ ] 01-01-PLAN.md — Package scaffold, pinned Beckhoff/ADS submodule, hex-fixture parser (wave 1)
+  - [ ] 01-02-PLAN.md — C++ CMake harness + dump_golden emitting 12 golden .hex frames (wave 2)
+  - [ ] 01-03-PLAN.md — C++ mock server (POSIX loop, fragment/coalesce, --selftest) (wave 3)
+  - [ ] 01-04-PLAN.md — Dart codec core: constants, NetId/Addr, AMS/TCP + AMS header codecs (wave 2)
+  - [ ] 01-05-PLAN.md — Per-command codecs + byte-for-byte golden parity tests (wave 3)
+  - [ ] 01-06-PLAN.md — FrameAssembler + fragment/coalesce/max-frame-guard tests (wave 3)
+  - [ ] 01-07-PLAN.md — Public API barrel + 2-job CI (Phase 2 gate) (wave 4)
 **Research**: NEEDS RESEARCH — exact AdsLib public-header surface usable from a C++ server role (which structs are includable without private headers) and cross-platform CMake build correctness (macOS dev vs Linux CI) need hands-on verification before Phase 2.
 **UI hint**: no
 
