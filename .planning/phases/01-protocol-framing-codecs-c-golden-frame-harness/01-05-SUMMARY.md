@@ -103,6 +103,11 @@ None - no external service configuration required.
 - PROTO-01 (encode + decode) and TEST-02 (golden parity both directions) are proven byte-for-byte against the reference C++ AdsLib output — the codec foundation is validated before any socket code exists.
 - Ready for the transport phase: the encoders produce complete, correct on-wire frames and the sealed `AdsResponse` decoders are ready to consume real responses read off a socket.
 
+## Self-Check: PASSED
+
+- Files verified present: `lib/src/protocol/commands.dart`, `test/unit/golden_parity_test.dart`, `01-05-SUMMARY.md`
+- Commits verified in history: `2d21453` (feat), `88422a4` (test), `acbd9ee` (docs)
+
 ---
 *Phase: 01-protocol-framing-codecs-c-golden-frame-harness*
 *Completed: 2026-07-03*
