@@ -23,7 +23,7 @@ A Dart application can reliably connect to a Beckhoff PLC and read, write, and s
 <!-- Current scope. Building toward these. -->
 
 **Protocol & transport**
-- [ ] AMS/TCP framing (AMS header, AMS/TCP header) implemented in pure Dart
+- [x] AMS/TCP framing (AMS header, AMS/TCP header) implemented in pure Dart — Validated in Phase 1 (byte-for-byte vs C++ goldens)
 - [ ] Configurable transport: connect directly to a remote ADS peer *and* via a local TwinCAT router on `:48898`, selectable at runtime
 - [ ] Dart port of the AmsRouter (local routing so no TwinCAT install is required for direct connections)
 - [ ] Connection lifecycle: open, close, reconnect, error/timeout handling
@@ -49,9 +49,9 @@ A Dart application can reliably connect to a Beckhoff PLC and read, write, and s
 - [ ] `action` — issue a control action / method call (WriteControl / RPC-style invocation)
 
 **Testing**
-- [ ] C++ mock ADS server built with CMake, reusing AdsLib framing, that Dart integration tests connect to
+- [x] C++ mock ADS server built with CMake, reusing AdsLib framing, that Dart integration tests connect to — Validated in Phase 1 (mock + dump_golden + selftest; live connect lands in Phase 2)
 - [ ] Dart integration tests validate encode/decode and behavior against the mock server's real frames
-- [ ] Unit tests for framing and codecs
+- [x] Unit tests for framing and codecs — Validated in Phase 1 (50 tests incl. golden parity + adversarial reassembly)
 
 ### Out of Scope
 
@@ -109,4 +109,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-03 after initialization*
+*Last updated: 2026-07-03 after Phase 1 (Protocol Framing, Codecs & C++ Golden-Frame Harness) completion*
