@@ -35,6 +35,15 @@ import 'exceptions.dart';
 /// payload arrives. [add] rejects any frame whose parsed `length` exceeds
 /// [maxFrameBytes] by throwing [MalformedFrameException] *before* allocating the
 /// frame buffer (RESEARCH Pitfall 4). The default guard is 4 MiB.
+///
+/// The guard never loses valid data: frames that completed *before* the
+/// poisoned wrapper in the same [add] call are returned normally, and the
+/// exception is deferred to the next [add] call. When the exception is thrown,
+/// the poisoned buffered remainder has been dropped, so a caller that keeps
+/// feeding a poisoned assembler cannot grow the internal buffer without
+/// bound. After a [MalformedFrameException] the byte stream is corrupt by
+/// definition — the caller should discard the assembler along with its
+/// connection.
 class FrameAssembler {
   /// Creates a frame assembler with an optional [maxFrameBytes] guard.
   ///
@@ -67,7 +76,12 @@ class FrameAssembler {
   /// frame is retained internally for a future [add].
   ///
   /// Throws [MalformedFrameException] — *before* allocating the frame buffer —
-  /// if a frame's AMS/TCP `length` field exceeds [maxFrameBytes].
+  /// if a frame's AMS/TCP `length` field exceeds [maxFrameBytes]. Frames that
+  /// completed earlier in the same call are never lost to the throw: when a
+  /// poisoned wrapper follows completed frames in one chunk, those frames are
+  /// returned first and the exception is thrown by the *next* [add] call. The
+  /// poisoned remainder is dropped from the buffer when the exception is
+  /// thrown; the caller should discard the assembler (the stream is corrupt).
   List<Uint8List> add(Uint8List chunk) {
     _buffer = _concat(_buffer, chunk);
 
@@ -88,11 +102,22 @@ class FrameAssembler {
       // Max-frame guard (DoS mitigation): reject a hostile length BEFORE
       // allocating a frame buffer of that size.
       if (length > maxFrameBytes) {
+        // Commit consumed state before failing so no completed frame is lost:
+        // if this call already parsed frames, return them now — the poison
+        // stays at the buffer front and the next add() throws deterministically
+        // at offset 0. When the poison IS at the front, drop the buffered
+        // remainder (it can never drain) and throw, so repeated add() calls on
+        // a poisoned assembler cannot grow the buffer without bound.
+        if (frames.isNotEmpty) {
+          _buffer = _buffer.sublist(offset);
+          return frames;
+        }
+        _buffer = Uint8List(0);
         throw MalformedFrameException(
           'AMS/TCP frame length exceeds max-frame guard '
           '($length > $maxFrameBytes bytes)',
           length: length,
-          offset: offset,
+          offset: 0,
         );
       }
 

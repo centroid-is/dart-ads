@@ -128,6 +128,40 @@ void main() {
     });
 
     test(
+        'Poison after a complete frame: [full A][oversized wrapper] in one '
+        'add returns A; the next add throws; the poison is dropped, not '
+        're-scanned (WR-01)', () {
+      final assembler = FrameAssembler();
+      final poison = Uint8List(6);
+      ByteData.sublistView(poison)
+        ..setUint16(0, 0, Endian.little)
+        ..setUint32(2, 0x00500000, Endian.little); // 5 MiB > 4 MiB guard
+
+      // Frame A completed before the poison arrived in the SAME chunk — it
+      // must be returned, never silently lost to the guard exception.
+      final frames = assembler.add(_cat(<Uint8List>[frameA, poison]));
+      expect(frames, hasLength(1),
+          reason: 'the frame completed before the poison must not be lost');
+      expect(frames.single, orderedEquals(frameA));
+
+      // The deferred guard fires on the next add, even with no new bytes.
+      expect(
+        () => assembler.add(Uint8List(0)),
+        throwsA(isA<MalformedFrameException>()
+            .having((e) => e.length, 'length', 0x00500000)),
+      );
+
+      // The poisoned remainder was dropped with the throw, so feeding the
+      // assembler again cannot re-scan the poison or grow the buffer
+      // without bound.
+      expect(assembler.hasBufferedBytes, isFalse,
+          reason: 'the poisoned remainder is dropped when the guard throws');
+      expect(assembler.add(Uint8List.fromList(frameA)).single,
+          orderedEquals(frameA),
+          reason: 'subsequent adds parse fresh bytes deterministically');
+    });
+
+    test(
         'Truncated: a frame missing its last byte emits nothing and throws no '
         'RangeError', () {
       final assembler = FrameAssembler();
