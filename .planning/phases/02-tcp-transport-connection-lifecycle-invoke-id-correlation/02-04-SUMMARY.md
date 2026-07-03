@@ -93,6 +93,10 @@ No new security-relevant surface introduced. This plan is test-only (no `lib/` c
 - Phase 2's live-harness success criteria are proven end-to-end over a real socket; the transport + connection stack (SocketTransport + FrameAssembler + AmsConnection) is validated against the C++ mock.
 - This is the final plan of Phase 2 (single-plan wave 3). Ready for phase verification and Phase 3 (ADS commands) which builds request/response codecs on top of this correlated connection.
 
+## Self-Check: PASSED
+
+All created files exist on disk; both task commits (`f2a0030`, `d3c580d`) present in git history.
+
 ---
 *Phase: 02-tcp-transport-connection-lifecycle-invoke-id-correlation*
 *Completed: 2026-07-03*

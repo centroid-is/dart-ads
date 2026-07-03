@@ -13,7 +13,7 @@ dart-ads is built bottom-up along a strict, technically load-bearing dependency 
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Protocol Framing, Codecs & C++ Golden-Frame Harness** - Byte-accurate AMS codec + CMake mock/golden harness proving encode/decode parity (completed 2026-07-03)
-- [ ] **Phase 2: TCP Transport, Connection Lifecycle & Invoke-ID Correlation** - Live socket, request/response correlation, and disconnect fan-out
+- [x] **Phase 2: TCP Transport, Connection Lifecycle & Invoke-ID Correlation** - Live socket, request/response correlation, and disconnect fan-out (completed 2026-07-03)
 - [ ] **Phase 3: Core ADS Commands & Error Mapping** - Read/Write/ReadWrite/ReadState/WriteControl/ReadDeviceInfo with typed exceptions
 - [ ] **Phase 4: AmsRouter & Direct / Local-Router Transport Modes** - NetId routing, runtime transport selection, and actionable 1861 route errors
 - [ ] **Phase 5: Device Notifications as Streams** - Subscribe/cancel as Dart Streams with nested stamp/sample demux and handle lifecycle
@@ -58,7 +58,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   - [x] 02-01-PLAN.md — AdsTransport interface + SocketTransport + FakeTransport + transport exceptions (wave 1)
   - [x] 02-02-PLAN.md — C++ mock --delay-ms/--close-after modes + shared startMockServer launch helper (wave 1)
   - [x] 02-03-PLAN.md — AmsConnection: invoke-ID correlation, timeout, notification demux, single-shot disconnect fan-out (wave 2)
-  - [ ] 02-04-PLAN.md — Live integration tests: connect/round-trip/close + reorder (--delay-ms) + mid-request disconnect (--close-after) (wave 3)
+  - [x] 02-04-PLAN.md — Live integration tests: connect/round-trip/close + reorder (--delay-ms) + mid-request disconnect (--close-after) (wave 3)
 **UI hint**: no
 
 ### Phase 3: Core ADS Commands & Error Mapping
@@ -155,7 +155,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Protocol Framing, Codecs & Golden-Frame Harness | 7/7 | Complete   | 2026-07-03 |
-| 2. TCP Transport, Lifecycle & Correlation | 3/4 | In Progress|  |
+| 2. TCP Transport, Lifecycle & Correlation | 4/4 | Complete   | 2026-07-03 |
 | 3. Core ADS Commands & Error Mapping | 0/TBD | Not started | - |
 | 4. AmsRouter & Transport Modes | 0/TBD | Not started | - |
 | 5. Device Notifications as Streams | 0/TBD | Not started | - |

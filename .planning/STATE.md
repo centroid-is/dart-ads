@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: ROADMAP.md and STATE.md written; REQUIREMENTS.md traceability populated.
-last_updated: "2026-07-03T20:36:16.703Z"
-last_activity: 2026-07-03 -- Phase 02 execution started
+last_updated: "2026-07-03T21:43:11.313Z"
+last_activity: 2026-07-03
 progress:
   total_phases: 9
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 11
-  completed_plans: 7
-  percent: 11
+  completed_plans: 11
+  percent: 22
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-07-03)
 ## Current Position
 
 Phase: 02 (TCP Transport, Connection Lifecycle & Invoke-ID Correlation) — EXECUTING
-Plan: 1 of 4
-Status: Executing Phase 02
-Last activity: 2026-07-03 -- Phase 02 execution started
+Plan: 2 of 4
+Status: Ready to execute
+Last activity: 2026-07-03
 
 Progress: [██████████] 100%
 
@@ -54,6 +54,7 @@ Progress: [██████████] 100%
 *Updated after each plan completion*
 | Phase 01 P01 | 2min | 3 tasks | 10 files |
 | Phase 01 P07 | 4min | 2 tasks | 5 files |
+| Phase 02 P04 | 7min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -68,6 +69,8 @@ Recent decisions affecting current work:
 - [Phase 01]: Pinned Beckhoff/ADS submodule to verified commit 57d63747; re-verify the 4-source build recipe before any re-pin — Reproducible mock-server/dumper build; RESEARCH verified this exact commit compiles
 - [Phase ?]: [Phase 01]: Public barrel uses intentional 'export ... show' clauses so internal helpers stay library-private (T-1-EXP).
 - [Phase ?]: [Phase 01]: 2-job CI is the Phase 2 gate — fast pure-Dart matrix + Linux CMake harness with golden-reproducibility and endian grep gate; no secrets.
+- [Phase ?]: [Phase 02]: No CI change needed — existing Linux integration job runs full 'dart test' which picks up @Tags(['integration']) tests.
+- [Phase ?]: [Phase 02]: Live integration tests use an explicit 10s per-request timeout so reorder/disconnect outcomes are provably correlation/connection results, never a timeout firing.
 
 ### Pending Todos
 
@@ -91,6 +94,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-03T18:16:55.640Z
+Last session: 2026-07-03T21:40:39.202Z
 Stopped at: ROADMAP.md and STATE.md written; REQUIREMENTS.md traceability populated.
 Resume file: None
