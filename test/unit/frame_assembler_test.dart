@@ -50,8 +50,7 @@ void main() {
       final emitted = <Uint8List>[];
 
       for (var i = 0; i < frameA.length; i++) {
-        final frames =
-            assembler.add(Uint8List.fromList(<int>[frameA[i]]));
+        final frames = assembler.add(Uint8List.fromList(<int>[frameA[i]]));
         if (i < frameA.length - 1) {
           // Nothing may emit while the frame is still incomplete.
           expect(frames, isEmpty,
@@ -92,8 +91,7 @@ void main() {
       final firstHalfB = Uint8List.sublistView(frameB, 0, splitAt);
       final secondHalfB = Uint8List.sublistView(frameB, splitAt);
 
-      final call1 =
-          assembler.add(_cat(<Uint8List>[frameA, firstHalfB]));
+      final call1 = assembler.add(_cat(<Uint8List>[frameA, firstHalfB]));
       expect(call1, hasLength(1), reason: 'call 1 emits only the full frame A');
       expect(call1.single, orderedEquals(frameA));
       expect(assembler.hasBufferedBytes, isTrue,

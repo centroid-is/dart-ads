@@ -82,8 +82,8 @@ class FrameAssembler {
 
       // Read the AMS/TCP length u32 directly from the buffer. No frame buffer
       // is allocated at this point, so the guard below runs before allocation.
-      final length = ByteData.sublistView(_buffer)
-          .getUint32(offset + 2, Endian.little);
+      final length =
+          ByteData.sublistView(_buffer).getUint32(offset + 2, Endian.little);
 
       // Max-frame guard (DoS mitigation): reject a hostile length BEFORE
       // allocating a frame buffer of that size.
@@ -104,8 +104,8 @@ class FrameAssembler {
 
       // Slice out exactly one complete frame as an independent copy so the
       // caller owns it and it does not alias future buffer state.
-      frames.add(Uint8List.sublistView(_buffer, offset, offset + total)
-          .sublist(0));
+      frames.add(
+          Uint8List.sublistView(_buffer, offset, offset + total).sublist(0));
       offset += total;
     }
 
