@@ -57,15 +57,23 @@ jobs:
       # multi-byte ByteData accessor in the protocol subtree MUST pass
       # Endian.little explicitly — never rely on host endianness. This fails the
       # build if any get/set{Uint,Int,Float}{16,32,64} call omits Endian.little.
-      # (Assumes one accessor call per source line, which the codec observes.)
+      # Comment lines are stripped and newlines joined first, so doc-comment
+      # prose and format-wrapped multi-line calls are handled correctly.
       - name: Endian-safety gate
         shell: bash
         run: |
-          if grep -REn '(get|set)(Uint|Int|Float)(16|32|64)\(' lib/src/protocol/ \
-            | grep -v 'Endian.little'; then
-            echo "::error::multi-byte ByteData accessor missing Endian.little in lib/src/protocol/"
-            exit 1
-          fi
+          offenders=0
+          for f in $(find lib/src/protocol -name '*.dart'); do
+            hits=$(sed -E 's://.*$::' "$f" | tr '\n' ' ' \
+              | grep -oE '\.(get|set)(Uint|Int|Float)(16|32|64)\([^;]*;' \
+              | grep -v 'Endian.little' || true)
+            if [ -n "$hits" ]; then
+              echo "::error::multi-byte ByteData accessor missing Endian.little in $f:"
+              echo "$hits"
+              offenders=1
+            fi
+          done
+          [ "$offenders" -eq 0 ] || exit 1
           echo "endian gate: all multi-byte accessors carry Endian.little"
 
       - name: Run unit + golden-parity tests
