@@ -48,10 +48,10 @@ void main() {
       expect(bytes, isEmpty);
     });
 
-    test('the 38-byte ReadDeviceInfo anchor round-trips with the documented '
+    test(
+        'the 38-byte ReadDeviceInfo anchor round-trips with the documented '
         'leading bytes', () {
-      const anchor =
-          '000020000000c0a8000101015303c0a800640101419c0100'
+      const anchor = '000020000000c0a8000101015303c0a800640101419c0100'
           '0400000000000000000001000000';
       final path = _writeHex(tempDir, 'anchor.hex', anchor);
       final bytes = readGolden(path);
