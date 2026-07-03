@@ -17,7 +17,13 @@ findings:
   warning: 5
   info: 9
   total: 15
-status: issues_found
+resolved:
+  critical: 1
+  warning: 5
+  info: 0
+fixed_at: 2026-07-03T22:40:00Z
+fix_report: 02-REVIEW-FIX.md
+status: critical_warning_resolved
 ---
 
 # Phase 2: Code Review Report
@@ -25,7 +31,7 @@ status: issues_found
 **Reviewed:** 2026-07-03T21:49:36Z
 **Depth:** standard
 **Files Reviewed:** 8
-**Status:** issues_found
+**Status:** critical_warning_resolved — all Critical + Warning findings fixed (see `02-REVIEW-FIX.md`); Info findings remain open
 
 ## Summary
 
@@ -65,6 +71,8 @@ return completer.future;
 ```
 Optionally also wrap `_transport.add(frame)` in a try/catch that removes the entry and cancels the timer, as defense against a future transport whose `add` can throw synchronously.
 
+**Resolved:** fixed in `8e71415` — frame is built (and range-checked) before any pending state; a sync `_transport.add` throw also unwinds the registration. Regression test outlives the timeout window and asserts the connection stays usable.
+
 ## Warnings
 
 ### WR-01: Invoke-ID wrap collision silently overwrites a live pending entry, permanently hanging the newer request's Future
@@ -83,6 +91,8 @@ int _allocInvokeId() {
 }
 ```
 
+**Resolved:** fixed in `e30ce1c` — allocation skips in-flight IDs, with a sanity `StateError` if ~4 billion requests were ever simultaneously pending. `@visibleForTesting debugNextInvokeId` seam (new `meta` dep) + wrap-collision regression test.
+
 ### WR-02: `connect()` has no state guard — a second call opens a socket, then throws `LateInitializationError`, leaking the live socket unrecoverably
 
 **File:** `lib/src/connection/ams_connection.dart:97-99`
@@ -98,6 +108,8 @@ Future<void> connect(String host, int port) async {
 }
 ```
 
+**Resolved:** fixed in `6e52f6d` — `StateError` guard runs before the transport is touched, so a rejected call can never open (and leak) a socket. Double-connect and connect-after-close regression tests added.
+
 ### WR-03: `done` completes before the transport is actually torn down; `_transport.close()` is fire-and-forget
 
 **File:** `lib/src/connection/ams_connection.dart:261-264` (with `lib/src/transport/socket_transport.dart:54-68`)
@@ -109,6 +121,8 @@ _transport.close().whenComplete(() {
 });
 ```
 (`_failClose` stays synchronous and single-shot; only the `done` completion moves after teardown.)
+
+**Resolved:** fixed in `7b08bcc` — `done` now chains off `_transport.close()` via `whenComplete`, exactly as suggested; `_failClose` remains synchronous and single-shot.
 
 ### WR-04: `_ensureBuilt` races itself when integration suites run in parallel — two concurrent `cmake --build` invocations on the same build directory
 
@@ -126,11 +140,15 @@ try {
 }
 ```
 
+**Resolved:** fixed in `fabd644` — adapted from the suggestion: `RandomAccessFile.lock` is a POSIX advisory lock and does not exclude between isolates of the *same* process (which is `dart test`'s topology), so the stale-check + build is instead serialized behind an atomic `File.create(exclusive: true)` lock file with a wait loop and a stale-lock timeout error. Lock file gitignored.
+
 ### WR-05: `unnecessary_import` in `ams_connection_test.dart` fails the project's `dart analyze --fatal-infos` CI gate
 
 **File:** `test/unit/ams_connection_test.dart:8`
 **Issue:** `dart analyze --fatal-infos` (the CI gate mandated in CLAUDE.md's CI conventions) currently exits non-zero: `The import of 'package:dart_ads/src/connection/ams_connection.dart' is unnecessary because all of the used elements are also provided by the import of 'package:dart_ads/dart_ads.dart'` — `AmsConnection` is exported from the public barrel, so the `src/` import is dead. This blocks the analyze job for the whole phase.
 **Fix:** Delete line 8 (`import 'package:dart_ads/src/connection/ams_connection.dart';`).
+
+**Resolved:** fixed in `6270fd9` — import deleted (the `fake_transport` `src/` import stays: `FakeTransport` is intentionally not exported). `dart analyze --fatal-infos` now exits clean.
 
 ## Info
 
