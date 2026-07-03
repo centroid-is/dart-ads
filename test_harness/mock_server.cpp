@@ -75,6 +75,13 @@ static const uint32_t kGoldenInvokeId = 1;
 //   targetNetId[6] leTargetPort[2] sourceNetId[6] leSourcePort[2] leCmdId[2] => 18
 static const size_t kStateFlagsInAms = 18;
 
+// Inbound max-frame guard, mirroring the Dart FrameAssembler's 4 MiB cap: a
+// single hostile 6-byte wrapper declaring a multi-GiB length must not make
+// the server buffer everything the peer sends. The cap also keeps
+// `sizeof(AmsTcpHeader) + length` well inside size_t on 32-bit builds, where
+// 6 + 0xFFFFFFFF would otherwise wrap and cause a heap overread.
+static const uint32_t kMaxFrameBytes = 4 * 1024 * 1024;
+
 // ---- Little-endian scalar helpers for the response ADS payload -------------
 static void putU16(std::vector<uint8_t>& v, uint16_t x)
 {
@@ -326,6 +333,7 @@ static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN)
         std::vector<uint8_t> inbuf;
         std::vector<uint8_t> coalesceBuf;
         uint8_t chunk[4096];
+        bool dropConnection = false;
         for (;;) {
             const ssize_t n = recv(fd, chunk, sizeof(chunk), 0);
             if (n <= 0) {
@@ -339,7 +347,14 @@ static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN)
                     break;
                 }
                 const AmsTcpHeader tcp(inbuf.data());
-                const size_t frameLen = sizeof(AmsTcpHeader) + tcp.length();
+                if (tcp.length() > kMaxFrameBytes) {
+                    // Hostile/corrupt length field: drop the connection
+                    // rather than buffering an unbounded frame.
+                    dropConnection = true;
+                    break;
+                }
+                const size_t frameLen =
+                    sizeof(AmsTcpHeader) + static_cast<size_t>(tcp.length());
                 if (inbuf.size() < frameLen) {
                     break; // wait for the rest of this frame
                 }
@@ -361,6 +376,9 @@ static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN)
                     }
                 }
                 inbuf.erase(inbuf.begin(), inbuf.begin() + frameLen);
+            }
+            if (dropConnection) {
+                break;
             }
         }
         // Flush any single coalesced frame still pending at connection close.
