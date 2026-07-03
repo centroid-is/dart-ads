@@ -1,0 +1,113 @@
+# dart_ads CI — the Phase 2 gate.
+#
+# Two jobs:
+#   * dart        — fast, cross-platform: format + analyze + endian gate + unit
+#                   (and golden-parity) tests on ubuntu, macOS and Windows. Pure
+#                   Dart, so it needs no C++ toolchain (Windows has no harness).
+#   * integration — Linux only: builds the CMake golden-frame harness from the
+#                   pinned Beckhoff/ADS submodule, proves the committed goldens
+#                   are reproducible from source, self-tests the mock server, and
+#                   runs the full Dart suite.
+#
+# Both jobs green == the gate that unlocks Phase 2. No secrets are referenced
+# (OIDC pub.dev publishing lands in a later phase).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  dart:
+    name: Dart (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Dart
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Install dependencies
+        run: dart pub get
+
+      - name: Verify formatting
+        run: dart format --output=none --set-exit-if-changed .
+
+      - name: Analyze
+        run: dart analyze --fatal-infos
+
+      # Endianness safety gate (RESEARCH Pitfall 2 / threat T-1-02): every
+      # multi-byte ByteData accessor in the protocol subtree MUST pass
+      # Endian.little explicitly — never rely on host endianness. This fails the
+      # build if any get/set{Uint,Int,Float}{16,32,64} call omits Endian.little.
+      # (Assumes one accessor call per source line, which the codec observes.)
+      - name: Endian-safety gate
+        shell: bash
+        run: |
+          if grep -REn '(get|set)(Uint|Int|Float)(16|32|64)\(' lib/src/protocol/ \
+            | grep -v 'Endian.little'; then
+            echo "::error::multi-byte ByteData accessor missing Endian.little in lib/src/protocol/"
+            exit 1
+          fi
+          echo "endian gate: all multi-byte accessors carry Endian.little"
+
+      - name: Run unit + golden-parity tests
+        run: dart test -x integration
+
+  integration:
+    name: Linux CMake harness + full suite
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Dart
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Install build toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++ ninja-build
+
+      - name: Configure harness
+        run: cmake -S test_harness -B test_harness/build
+
+      - name: Build harness
+        run: cmake --build test_harness/build
+
+      # Regenerate goldens from the C++ source of truth and prove they match the
+      # committed bytes exactly — no drift (threat T-1-SC). Any diff fails CI.
+      - name: Goldens are reproducible from source
+        run: |
+          ./test_harness/build/dump_golden test/golden/
+          git diff --exit-code test/golden
+
+      - name: Mock server byte-accuracy selftest
+        run: ./test_harness/build/mock_server --selftest
+
+      - name: Install dependencies
+        run: dart pub get
+
+      - name: Run full test suite
+        run: dart test
