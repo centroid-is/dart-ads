@@ -12,14 +12,14 @@ Requirements for initial release (full AdsLib parity). Each maps to roadmap phas
 - [ ] **PROTO-01**: Library encodes and decodes the AMS/TCP header (6-byte: reserved u16 + length u32) and the 32-byte AMS header, all fields little-endian
 - [ ] **PROTO-02**: Library reassembles complete AMS frames from a fragmented or coalesced TCP byte stream via a stateful frame assembler (with a max-frame guard)
 - [x] **PROTO-03**: Library correlates each response to its request by invoke-ID (monotonic counter → Completer) with a per-request timeout
-- [ ] **PROTO-04**: Library routes unsolicited notification frames (cmd 0x0008, no invoke-ID) to the notification demux instead of the request/response map
+- [x] **PROTO-04**: Library routes unsolicited notification frames (cmd 0x0008, no invoke-ID) to the notification demux instead of the request/response map
 
 ### Transport & Connection
 
 - [x] **TRANS-01**: User can open and close a TCP connection to an ADS peer on port 48898
-- [ ] **TRANS-02**: Library enforces a configurable per-request timeout and fails the pending operation on expiry
+- [x] **TRANS-02**: Library enforces a configurable per-request timeout and fails the pending operation on expiry
 - [x] **TRANS-03**: On disconnect, library errors all pending requests and closes all notification streams (failure fan-out)
-- [ ] **TRANS-04**: Library exposes a fakeable transport interface so codec and connection logic are unit-testable without a live socket
+- [x] **TRANS-04**: Library exposes a fakeable transport interface so codec and connection logic are unit-testable without a live socket
 
 ### Core ADS Commands
 
@@ -132,11 +132,11 @@ Which phases cover which requirements. Populated during roadmap creation.
 | TEST-02 | Phase 1 | Complete |
 | TEST-04 | Phase 1 | Pending |
 | TRANS-01 | Phase 2 | Complete |
-| TRANS-02 | Phase 2 | Pending |
+| TRANS-02 | Phase 2 | Complete |
 | TRANS-03 | Phase 2 | Complete |
-| TRANS-04 | Phase 2 | Pending |
+| TRANS-04 | Phase 2 | Complete |
 | PROTO-03 | Phase 2 | Complete |
-| PROTO-04 | Phase 2 | Pending |
+| PROTO-04 | Phase 2 | Complete |
 | TEST-03 | Phase 2 | Complete |
 | CMD-01 | Phase 3 | Pending |
 | CMD-02 | Phase 3 | Pending |
