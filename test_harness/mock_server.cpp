@@ -23,6 +23,16 @@
 //   --coalesce     buffer two response frames and emit them in a SINGLE send(),
 //                  so two frames arrive in one TCP segment — exercises the
 //                  FrameAssembler's ability to split coalesced frames (TEST-04).
+//   --delay-ms N   DEFER the first response of a connection and flush it LAST
+//                  (after usleep(N ms)); responses #2..N go out immediately. An
+//                  inline pre-send sleep does NOT reorder (the mock answers
+//                  frames in receive order), so two PIPELINED requests provably
+//                  receive OUT-OF-ORDER responses — exercises the Dart invoke-ID
+//                  correlation under response reordering (PROTO-03). Thread-free.
+//   --close-after N close the socket on the Nth COMPLETE inbound request WITHOUT
+//                  answering it, so the Dart client is left with at least one
+//                  pending request that must fan out with a connection error
+//                  (TRANS-03). Deterministic, thread-free mid-request disconnect.
 //   --selftest [p] build the canned ReadDeviceInfo response in-process and
 //                  compare it byte-for-byte against the committed golden
 //                  (default p = test/golden/read_device_info_res.hex). Prints OK
@@ -279,7 +289,16 @@ static void sendResponse(int fd, const std::vector<uint8_t>& frame, TransmitMode
 }
 
 // ---- Live accept loop (built in Phase 1; exercised over a socket in Phase 2) -
-static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN)
+//
+// delayMs > 0 (--delay-ms): defer the FIRST response of each connection and
+//   flush it LAST (after usleep(delayMs ms)); later responses go immediately —
+//   deterministically inverting the order of two pipelined requests.
+// closeAfter > 0 (--close-after): close the connection on the Nth complete
+//   inbound request frame WITHOUT answering it, leaving a pending request that
+//   must fan out on the client. Both are thread-free and orthogonal to
+//   --fragment/--coalesce (timing/lifecycle vs segmentation).
+static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN,
+                     int delayMs, int closeAfter)
 {
     const int listenFd = socket(AF_INET, SOCK_STREAM, 0);
     if (listenFd < 0) {
@@ -337,6 +356,15 @@ static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN)
         std::vector<uint8_t> coalesceBuf;
         uint8_t chunk[4096];
         bool dropConnection = false;
+        // Connection-scoped --delay-ms state: hold response #1, flush it last.
+        std::vector<uint8_t> deferred;
+        bool haveDeferred = false;
+        int respCount = 0;
+        // Connection-scoped --close-after counter: complete inbound requests.
+        int reqCount = 0;
+        // Set once the --close-after path has already close(fd)'d this
+        // connection, so the teardown below neither sends nor double-closes.
+        bool closedByCloseAfter = false;
         for (;;) {
             const ssize_t n = recv(fd, chunk, sizeof(chunk), 0);
             if (n <= 0) {
@@ -361,6 +389,16 @@ static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN)
                 if (inbuf.size() < frameLen) {
                     break; // wait for the rest of this frame
                 }
+                // A complete inbound request frame is present. --close-after N:
+                // on the Nth complete request, close WITHOUT answering it, so
+                // the client is left with at least one pending request to fan
+                // out. The outer accept loop keeps serving later connections.
+                ++reqCount;
+                if (closeAfter > 0 && reqCount >= closeAfter) {
+                    close(fd);
+                    closedByCloseAfter = true;
+                    break; // leave this request unanswered
+                }
                 if (tcp.length() >= sizeof(AoEHeader)) {
                     const AoEHeader aoe(inbuf.data() + sizeof(AmsTcpHeader));
                     switch (aoe.cmdId()) {
@@ -371,7 +409,14 @@ static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN)
                         const std::vector<uint8_t> res = buildReadDeviceInfoRes(
                             aoe.sourceAddr(), aoe.sourcePort(), aoe.targetAddr(),
                             aoe.targetPort(), aoe.invokeId());
-                        sendResponse(fd, res, mode, fragmentN, coalesceBuf);
+                        // --delay-ms N: defer response #1, send #2..N now.
+                        ++respCount;
+                        if (delayMs > 0 && respCount == 1) {
+                            deferred = res;
+                            haveDeferred = true;
+                        } else {
+                            sendResponse(fd, res, mode, fragmentN, coalesceBuf);
+                        }
                         break;
                     }
                     default:
@@ -382,9 +427,27 @@ static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN)
                 }
                 inbuf.erase(inbuf.begin(), inbuf.begin() + frameLen);
             }
-            if (dropConnection) {
+            if (dropConnection || closedByCloseAfter) {
                 break;
             }
+            // Once at least one later response has been sent, flush the deferred
+            // first response LAST (after the delay) so two pipelined requests
+            // provably receive out-of-order responses.
+            if (haveDeferred && respCount >= 2) {
+                usleep(static_cast<useconds_t>(delayMs) * 1000);
+                sendResponse(fd, deferred, mode, fragmentN, coalesceBuf);
+                haveDeferred = false;
+            }
+        }
+        if (closedByCloseAfter) {
+            // --close-after already closed the socket; nothing more to flush.
+            continue;
+        }
+        // Only one request ever arrived: flush the still-deferred first
+        // response so it is never lost at connection close.
+        if (haveDeferred) {
+            sendResponse(fd, deferred, mode, fragmentN, coalesceBuf);
+            haveDeferred = false;
         }
         // Flush any single coalesced frame still pending at connection close.
         if (!coalesceBuf.empty()) {
@@ -413,6 +476,8 @@ int main(int argc, char** argv)
     int fixedPort = 0; // 0 => ephemeral
     TransmitMode mode = TransmitMode::Normal;
     size_t fragmentN = 0;
+    int delayMs = 0;   // 0 => no first-response deferral
+    int closeAfter = 0; // 0 => never force-close mid-request
     bool selftest = false;
     std::string goldenPath = "test/golden/read_device_info_res.hex";
 
@@ -439,6 +504,18 @@ int main(int argc, char** argv)
             mode = TransmitMode::Fragment;
         } else if (arg == "--coalesce") {
             mode = TransmitMode::Coalesce;
+        } else if (arg == "--delay-ms") {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "--delay-ms requires a value\n");
+                return 2;
+            }
+            delayMs = std::atoi(argv[++i]);
+        } else if (arg == "--close-after") {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "--close-after requires a value\n");
+                return 2;
+            }
+            closeAfter = std::atoi(argv[++i]);
         } else {
             fprintf(stderr, "unknown argument: %s\n", arg.c_str());
             return 2;
@@ -448,5 +525,5 @@ int main(int argc, char** argv)
     if (selftest) {
         return runSelftest(goldenPath);
     }
-    return runServer(fixedPort, mode, fragmentN);
+    return runServer(fixedPort, mode, fragmentN, delayMs, closeAfter);
 }
