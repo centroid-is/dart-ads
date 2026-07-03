@@ -283,8 +283,10 @@ class AmsConnection {
   /// the pending map BEFORE erroring (so `completeError` callbacks can't mutate
   /// the map being drained, and a stray timeout can't fire mid-fan-out) → error
   /// every pending with [AdsConnectionException] → error+close every
-  /// notification controller → close the transport → complete [done]. The
-  /// `_closed` guard makes a following `onError`+`onDone` (or a `close()`)
+  /// notification controller → close the transport → complete [done] once the
+  /// transport teardown actually finishes (WR-03: `done`'s contract is "fully
+  /// torn down", so it must not complete while the socket is still mid-flush).
+  /// The `_closed` guard makes a following `onError`+`onDone` (or a `close()`)
   /// idempotent — no double-complete, no hung Futures.
   void _failClose(Object cause) {
     if (_closed) return;
@@ -306,10 +308,15 @@ class AmsConnection {
     }
     _demuxControllers.clear();
 
-    _transport.close();
-    if (!_doneCompleter.isCompleted) {
-      _doneCompleter.complete();
-    }
+    // Chain [done] off the transport teardown rather than completing it
+    // eagerly: SocketTransport.close() awaits flush() before destroy(), and
+    // `await conn.close()` must not return while the fd is still open.
+    // _failClose itself stays synchronous and single-shot.
+    _transport.close().whenComplete(() {
+      if (!_doneCompleter.isCompleted) {
+        _doneCompleter.complete();
+      }
+    });
   }
 
   /// Normalises a disconnect [cause] into an [AdsConnectionException]: passes an
