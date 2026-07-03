@@ -96,7 +96,18 @@ class AmsConnection {
   /// (the stream is corrupt by definition), so it tears the connection down.
   /// The stream's `onError`/`onDone` are the disconnect signals fanned out in
   /// [_failClose].
+  ///
+  /// Throws a [StateError] if called more than once or after [close]: the
+  /// connection is single-use (reconnect policy is a v2 concern), and the
+  /// guard must run BEFORE the transport is touched so a rejected call can
+  /// never open (and then leak) a socket.
   Future<void> connect(String host, int port) async {
+    if (_connected || _closed) {
+      throw StateError(
+        'AmsConnection is single-use: '
+        'already ${_closed ? 'closed' : 'connected'}',
+      );
+    }
     await _transport.connect(host, port);
     _assembler = FrameAssembler();
     _connected = true;

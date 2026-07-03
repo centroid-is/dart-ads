@@ -184,6 +184,37 @@ void main() {
     });
   });
 
+  group('lifecycle guards', () {
+    test('double connect() throws StateError and leaves the connection usable',
+        () async {
+      final fake = FakeTransport();
+      final conn = newConnection(fake);
+      await conn.connect('fake', 0);
+
+      // Regression (WR-02): a second connect() used to open a fresh socket
+      // and THEN die on the late-final assembler, leaking the socket.
+      await expectLater(conn.connect('fake', 0), throwsStateError);
+      expect(conn.isConnected, isTrue);
+
+      // The original connection still works end-to-end.
+      final resp = Uint8List.fromList([3]);
+      final f = conn.request(0x02, Uint8List(0));
+      final id = outboundInvokeId(fake.written.single);
+      fake.feed(buildFrame(invokeId: id, commandId: 0x02, payload: resp));
+      expect(await f, equals(resp));
+    });
+
+    test('connect() after close() throws StateError', () async {
+      final fake = FakeTransport();
+      final conn = newConnection(fake);
+      await conn.connect('fake', 0);
+      await conn.close();
+
+      await expectLater(conn.connect('fake', 0), throwsStateError);
+      expect(conn.isConnected, isFalse);
+    });
+  });
+
   group('invoke-id wrap', () {
     test('allocation skips an ID still in flight after wrap — no overwrite',
         () async {
