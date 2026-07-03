@@ -126,13 +126,59 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (populated by roadmapper) | — | Pending |
+| PROTO-01 | Phase 1 | Pending |
+| PROTO-02 | Phase 1 | Pending |
+| TEST-01 | Phase 1 | Pending |
+| TEST-02 | Phase 1 | Pending |
+| TEST-04 | Phase 1 | Pending |
+| TRANS-01 | Phase 2 | Pending |
+| TRANS-02 | Phase 2 | Pending |
+| TRANS-03 | Phase 2 | Pending |
+| TRANS-04 | Phase 2 | Pending |
+| PROTO-03 | Phase 2 | Pending |
+| PROTO-04 | Phase 2 | Pending |
+| TEST-03 | Phase 2 | Pending |
+| CMD-01 | Phase 3 | Pending |
+| CMD-02 | Phase 3 | Pending |
+| CMD-03 | Phase 3 | Pending |
+| CMD-04 | Phase 3 | Pending |
+| CMD-05 | Phase 3 | Pending |
+| CMD-06 | Phase 3 | Pending |
+| ERR-01 | Phase 3 | Pending |
+| ROUTE-01 | Phase 4 | Pending |
+| ROUTE-02 | Phase 4 | Pending |
+| ROUTE-03 | Phase 4 | Pending |
+| ERR-02 | Phase 4 | Pending |
+| NOTIF-01 | Phase 5 | Pending |
+| NOTIF-02 | Phase 5 | Pending |
+| NOTIF-03 | Phase 5 | Pending |
+| NOTIF-04 | Phase 5 | Pending |
+| SUM-01 | Phase 6 | Pending |
+| SUM-02 | Phase 6 | Pending |
+| SUM-03 | Phase 6 | Pending |
+| SUM-04 | Phase 6 | Pending |
+| SYM-01 | Phase 7 | Pending |
+| SYM-02 | Phase 7 | Pending |
+| SYM-03 | Phase 7 | Pending |
+| SYM-04 | Phase 7 | Pending |
+| CLI-01 | Phase 8 | Pending |
+| CLI-02 | Phase 8 | Pending |
+| CLI-03 | Phase 8 | Pending |
+| CLI-04 | Phase 8 | Pending |
+| CLI-05 | Phase 8 | Pending |
+| CLI-06 | Phase 8 | Pending |
+| CLI-07 | Phase 8 | Pending |
+| CLI-08 | Phase 8 | Pending |
+| PKG-01 | Phase 9 | Pending |
+| PKG-02 | Phase 9 | Pending |
 
 **Coverage:**
-- v1 requirements: 39 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 39 ⚠️
+- v1 requirements: 45 total
+- Mapped to phases: 45 ✓
+- Unmapped: 0
+
+*Note: an earlier draft stated "39 total"; the actual v1 requirement count across all 11 categories is 45 (NOTIF-05 and ROUTE-04 are v2, not counted here).*
 
 ---
 *Requirements defined: 2026-07-03*
-*Last updated: 2026-07-03 after initial definition*
+*Last updated: 2026-07-03 after roadmap creation (traceability populated)*
