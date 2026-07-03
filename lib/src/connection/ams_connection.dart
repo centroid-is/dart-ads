@@ -16,6 +16,8 @@ library;
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:meta/meta.dart';
+
 import '../protocol/ams_header.dart';
 import '../protocol/ams_net_id.dart';
 import '../protocol/ams_tcp_header.dart';
@@ -167,11 +169,32 @@ class AmsConnection {
 
   /// Allocates the next monotonic u32 invoke-ID, wrapping `0xFFFFFFFF → 1` and
   /// never yielding 0 (0 is reserved for notification frames).
+  ///
+  /// IDs still in flight when the counter wraps back onto them are skipped
+  /// (WR-01): overwriting a live [_pending] entry would leave the older timer
+  /// armed on the same ID, and its `remove` would claim the NEW request's
+  /// entry — permanently hanging the new caller's Future. The skip loop is
+  /// bounded by the sanity guard: it can only fail to terminate if every one
+  /// of the ~4 billion IDs is simultaneously pending, which the guard rejects
+  /// up front.
   int _allocInvokeId() {
-    final id = _nextInvokeId;
+    if (_pending.length >= 0xFFFFFFFE) {
+      throw StateError(
+        'no free invoke-IDs: ${_pending.length} requests already in flight',
+      );
+    }
+    var id = _nextInvokeId;
+    while (_pending.containsKey(id)) {
+      id = id == 0xFFFFFFFF ? 1 : id + 1;
+    }
     _nextInvokeId = id == 0xFFFFFFFF ? 1 : id + 1;
     return id;
   }
+
+  /// Test seam: overrides the ID the allocator tries next, so wrap-around
+  /// collision behaviour (WR-01) is testable without issuing 2^32 requests.
+  @visibleForTesting
+  set debugNextInvokeId(int value) => _nextInvokeId = value;
 
   /// Builds the on-wire frame: 6-byte AMS/TCP wrapper + 32-byte AMS header +
   /// [payload], stamping [invokeId] and [commandId] via the real Phase-1

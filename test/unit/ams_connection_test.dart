@@ -184,6 +184,41 @@ void main() {
     });
   });
 
+  group('invoke-id wrap', () {
+    test('allocation skips an ID still in flight after wrap — no overwrite',
+        () async {
+      final fake = FakeTransport();
+      final conn = newConnection(fake);
+      await conn.connect('fake', 0);
+
+      // Drive the counter to the wrap point: request A takes 0xFFFFFFFF and
+      // stays in flight (no response yet); the counter wraps to 1 (never 0).
+      conn.debugNextInvokeId = 0xFFFFFFFF;
+      final fA = conn.request(0x02, Uint8List(0));
+      expect(outboundInvokeId(fake.written[0]), 0xFFFFFFFF);
+
+      // Simulate a full wrap landing back on the in-flight ID. Regression
+      // (WR-01): allocation used to hand out 0xFFFFFFFF again, overwriting
+      // the live pending entry and permanently hanging request B's Future.
+      // It must skip to the next free ID instead.
+      conn.debugNextInvokeId = 0xFFFFFFFF;
+      final fB = conn.request(0x02, Uint8List(0));
+      expect(outboundInvokeId(fake.written[1]), 1,
+          reason:
+              '0xFFFFFFFF is still pending, 0 is reserved — next free is 1');
+
+      // Both requests still resolve to their own responses.
+      final respA = Uint8List.fromList([1]);
+      final respB = Uint8List.fromList([2]);
+      fake.feed(
+          buildFrame(invokeId: 0xFFFFFFFF, commandId: 0x02, payload: respA));
+      fake.feed(buildFrame(invokeId: 1, commandId: 0x02, payload: respB));
+      expect(await fA, equals(respA));
+      expect(await fB, equals(respB));
+      expect(conn.droppedResponses, 0);
+    });
+  });
+
   group('encode throw', () {
     test(
         'a sync ArgumentError from encode leaves no pending state behind '
