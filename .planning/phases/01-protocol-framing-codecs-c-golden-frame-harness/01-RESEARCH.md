@@ -456,16 +456,15 @@ Uint8List readGolden(String path) {
 | A4 | Golden set should cover 6 commands (ReadDeviceInfo/Read/Write/ReadState/WriteControl/ReadWrite) | Phase Requirements | Low — CONTEXT makes command breadth Claude's discretion (min ReadDeviceInfo); more coverage is strictly better |
 | A5 | The dev machine's Dart 3.11.5 is fine against the `>=3.5.0` floor | Environment Availability | None — floor is satisfied; CI uses `dart-lang/setup-dart` stable |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Exact golden-frame command breadth for Phase 1**
+1. **Exact golden-frame command breadth for Phase 1** — RESOLVED: all 6 commands (ReadDeviceInfo/Read/Write/ReadState/WriteControl/ReadWrite), request + response, per plan 01-02 Task 2 (12 golden .hex files).
    - What we know: minimum is ReadDeviceInfo req+resp; the 6 core command layouts are fully specified and verified.
-   - What's unclear: whether the planner wants all 6 in Phase 1 or defers Read/Write/ReadWrite golden frames to Phase 3.
-   - Recommendation: generate all 6 now — the dumper is trivial once one command works, and it front-loads parity coverage cheaply.
+   - Resolution: generate all 6 now — the dumper is trivial once one command works, and it front-loads parity coverage cheaply.
 
-2. **Which AmsNetId/port values to bake into golden fixtures**
+2. **Which AmsNetId/port values to bake into golden fixtures** — RESOLVED: target `192.168.0.1.1.1:851`, source `192.168.0.100.1.1:40001`, invokeId 1, baked as constants in dump_golden.cpp per plan 01-02 Task 2.
    - What we know: the dumper takes any NetId/port; the verified example used `192.168.0.1.1.1:851` / `192.168.0.100.1.1:40001` / invokeId 1.
-   - Recommendation: fix deterministic values in the dumper (constants) so golden `.hex` are reproducible and diffs are meaningful.
+   - Resolution: fixed deterministic values in the dumper (constants) so golden `.hex` are reproducible and diffs are meaningful.
 
 ## Environment Availability
 
