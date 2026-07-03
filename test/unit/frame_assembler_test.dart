@@ -128,6 +128,36 @@ void main() {
     });
 
     test(
+        'Minimum-length guard: a wrapper declaring length < 32 (no room for '
+        'the AMS header) throws MalformedFrameException instead of emitting '
+        'an impossible frame (WR-02)', () {
+      // length = 10 < 32: too short to carry the mandatory 32-byte AMS
+      // header, so the frame is malformed by definition. Without the guard
+      // this would emit a 16-byte "complete frame" that crashes downstream
+      // decoders with an untyped RangeError.
+      for (final tooSmall in <int>[0, 10, 31]) {
+        final assembler = FrameAssembler();
+        final wrapper = Uint8List(6);
+        ByteData.sublistView(wrapper)
+          ..setUint16(0, 0, Endian.little)
+          ..setUint32(2, tooSmall, Endian.little);
+
+        expect(
+          () => assembler.add(wrapper),
+          throwsA(isA<MalformedFrameException>()
+              .having((e) => e.length, 'length', tooSmall)),
+          reason: 'length $tooSmall must be rejected with a typed exception',
+        );
+      }
+
+      // Boundary: length == 32 (a header-only frame, e.g. the 38-byte
+      // ReadDeviceInfo request) is the smallest valid frame and must pass.
+      final assembler = FrameAssembler();
+      expect(assembler.add(Uint8List.fromList(frameA)).single,
+          orderedEquals(frameA));
+    });
+
+    test(
         'Poison after a complete frame: [full A][oversized wrapper] in one '
         'add returns A; the next add throws; the poison is dropped, not '
         're-scanned (WR-01)', () {

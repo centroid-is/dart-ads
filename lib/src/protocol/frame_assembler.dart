@@ -11,6 +11,7 @@ library;
 
 import 'dart:typed_data';
 
+import 'ams_header.dart';
 import 'ams_tcp_header.dart';
 import 'exceptions.dart';
 
@@ -28,13 +29,16 @@ import 'exceptions.dart';
 /// coalesced into one `add` call. [add] buffers bytes across calls (this class
 /// is stateful) and emits each complete frame exactly once, in order.
 ///
-/// ## Max-frame guard (DoS mitigation)
+/// ## Length-field guard (DoS mitigation + structural minimum)
 ///
 /// A hostile or corrupt peer can send a wrapper whose `length` field claims a
 /// huge frame, tricking a naive reader into allocating gigabytes before any
 /// payload arrives. [add] rejects any frame whose parsed `length` exceeds
 /// [maxFrameBytes] by throwing [MalformedFrameException] *before* allocating the
-/// frame buffer (RESEARCH Pitfall 4). The default guard is 4 MiB.
+/// frame buffer (RESEARCH Pitfall 4). The default guard is 4 MiB. Symmetrically,
+/// a declared `length` below the 32-byte AMS header is structurally impossible
+/// (every AMS/TCP frame carries an AMS header) and is rejected with the same
+/// typed exception rather than emitted for a downstream decoder to crash on.
 ///
 /// The guard never loses valid data: frames that completed *before* the
 /// poisoned wrapper in the same [add] call are returned normally, and the
@@ -76,7 +80,8 @@ class FrameAssembler {
   /// frame is retained internally for a future [add].
   ///
   /// Throws [MalformedFrameException] — *before* allocating the frame buffer —
-  /// if a frame's AMS/TCP `length` field exceeds [maxFrameBytes]. Frames that
+  /// if a frame's AMS/TCP `length` field exceeds [maxFrameBytes] or falls
+  /// below the 32-byte AMS header minimum. Frames that
   /// completed earlier in the same call are never lost to the throw: when a
   /// poisoned wrapper follows completed frames in one chunk, those frames are
   /// returned first and the exception is thrown by the *next* [add] call. The
@@ -99,9 +104,12 @@ class FrameAssembler {
       final length =
           ByteData.sublistView(_buffer).getUint32(offset + 2, Endian.little);
 
-      // Max-frame guard (DoS mitigation): reject a hostile length BEFORE
-      // allocating a frame buffer of that size.
-      if (length > maxFrameBytes) {
+      // Length-field guard. Too big (DoS mitigation): reject a hostile
+      // length BEFORE allocating a frame buffer of that size. Too small:
+      // every AMS/TCP frame must carry a 32-byte AMS header, so a declared
+      // length below AmsHeader.byteLength is structurally impossible and
+      // would crash downstream decoders instead of raising a typed error.
+      if (length < AmsHeader.byteLength || length > maxFrameBytes) {
         // Commit consumed state before failing so no completed frame is lost:
         // if this call already parsed frames, return them now — the poison
         // stays at the buffer front and the next add() throws deterministically
@@ -114,8 +122,8 @@ class FrameAssembler {
         }
         _buffer = Uint8List(0);
         throw MalformedFrameException(
-          'AMS/TCP frame length exceeds max-frame guard '
-          '($length > $maxFrameBytes bytes)',
+          'AMS/TCP frame length $length outside valid range '
+          '[${AmsHeader.byteLength}, $maxFrameBytes]',
           length: length,
           offset: 0,
         );
