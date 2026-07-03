@@ -55,6 +55,11 @@ class AmsConnection {
   /// Invoke-ID → in-flight request. `remove` is the sole completion claim.
   final Map<int, PendingRequest> _pending = <int, PendingRequest>{};
 
+  /// Notification-handle → demux controller. Empty in Phase 2 (Phase 5 attaches
+  /// real Streams); the disconnect fan-out already closes each with error.
+  final Map<int, StreamController<Uint8List>> _demuxControllers =
+      <int, StreamController<Uint8List>>{};
+
   /// The Phase-1 reassembler turning inbound TCP chunks into whole frames.
   late final FrameAssembler _assembler;
 
@@ -138,8 +143,12 @@ class AmsConnection {
   }
 
   /// Gracefully tears the connection down, erroring every pending request.
+  ///
+  /// Idempotent: routes through the single-shot [_failClose], then awaits
+  /// [done]. Calling it after a disconnect is a no-op.
   Future<void> close() async {
-    throw UnimplementedError('disconnect fan-out lands in Task 3');
+    _failClose(const AdsConnectionException('closed by client'));
+    await done;
   }
 
   /// Allocates the next monotonic u32 invoke-ID, wrapping `0xFFFFFFFF → 1` and
@@ -220,13 +229,46 @@ class AmsConnection {
     );
   }
 
-  /// Single-shot teardown. Full disconnect fan-out (error all pending, close
-  /// notification controllers, complete [done]) lands in Task 3; for now the
-  /// guard and subscription-cancel are in place so `onError`/`onDone` are
-  /// idempotent.
+  /// Single-shot disconnect fan-out (TRANS-03).
+  ///
+  /// Ordering: set `_closed` first (fail-fast for re-entrancy) → snapshot+clear
+  /// the pending map BEFORE erroring (so `completeError` callbacks can't mutate
+  /// the map being drained, and a stray timeout can't fire mid-fan-out) → error
+  /// every pending with [AdsConnectionException] → error+close every
+  /// notification controller → close the transport → complete [done]. The
+  /// `_closed` guard makes a following `onError`+`onDone` (or a `close()`)
+  /// idempotent — no double-complete, no hung Futures.
   void _failClose(Object cause) {
     if (_closed) return;
     _closed = true;
     _subscription?.cancel();
+
+    final error = _asConnectionException(cause);
+
+    final pending = List.of(_pending.values);
+    _pending.clear();
+    for (final p in pending) {
+      p.timer.cancel();
+      p.completer.completeError(error);
+    }
+
+    for (final controller in _demuxControllers.values) {
+      controller.addError(error);
+      controller.close();
+    }
+    _demuxControllers.clear();
+
+    _transport.close();
+    if (!_doneCompleter.isCompleted) {
+      _doneCompleter.complete();
+    }
   }
+
+  /// Normalises a disconnect [cause] into an [AdsConnectionException]: passes an
+  /// existing one through (preserving its message) and wraps any other error as
+  /// the [AdsConnectionException.cause].
+  AdsConnectionException _asConnectionException(Object cause) =>
+      cause is AdsConnectionException
+          ? cause
+          : AdsConnectionException('connection lost', cause: cause);
 }

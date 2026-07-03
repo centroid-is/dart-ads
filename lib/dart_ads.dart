@@ -67,6 +67,12 @@ export 'src/transport/socket_transport.dart' show SocketTransport;
 export 'src/connection/exceptions.dart'
     show AdsTimeoutException, AdsConnectionException;
 
+/// The [AmsConnection] (L4): invoke-ID correlation, per-request timeout, the
+/// notification demux hook, and single-shot disconnect fan-out. The internal
+/// `PendingRequest` record stays package-private and is intentionally NOT
+/// exported.
+export 'src/connection/ams_connection.dart' show AmsConnection;
+
 /// Wire-protocol constants (command IDs, state flags, ports, index groups,
 /// device-data offsets, run states, error codes).
 export 'src/protocol/constants.dart'
