@@ -107,6 +107,12 @@ None - no external service configuration required. All logic is unit-tested via 
 - Phase 3 can build `AdsClient` on top of `AmsConnection.request`, adding per-command decode and `errorCode`→exception mapping.
 - Phase 5 will hang real notification `Stream`s off the `_demuxControllers` hook that the disconnect fan-out already closes-with-error.
 
+## Self-Check: PASSED
+
+- All 3 created files + 1 modified file present on disk.
+- All task commits present: `462c89c` (Task 1 test), `8cfaccf` (Task 2 feat), `fbdf9ee` (Task 3 feat), `c924583` (docs).
+- `dart test -x integration` green (61 unit tests); `dart analyze --fatal-infos` clean across `lib/dart_ads.dart` + `lib/src/connection/`; `dart format --set-exit-if-changed` clean.
+
 ---
 *Phase: 02-tcp-transport-connection-lifecycle-invoke-id-correlation*
 *Completed: 2026-07-03*
