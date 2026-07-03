@@ -2,22 +2,29 @@
 ///
 /// It owns the monotonic invoke-ID counter and the invoke-ID→[PendingRequest]
 /// correlation map, stamps and sends outbound frames through an injected
-/// [AdsTransport], feeds inbound bytes into the Phase-1 frame reassembler,
+/// [AdsTransport], feeds inbound bytes into the Phase-1 [FrameAssembler],
 /// correlates each response to its request Future, enforces a per-request
-/// timeout, routes cmd 0x08 notification frames to the demux path, and performs
-/// a single-shot disconnect fan-out.
+/// timeout, routes cmd 0x08 notification frames to the demux path, and (in
+/// Task 3) performs a single-shot disconnect fan-out.
 ///
-/// NOTE: this file is the RED skeleton (Task 1). The public API surface is
-/// complete so the behaviour tests compile, but the method bodies are not yet
-/// implemented — correlation/timeout/demux land in Task 2 and the disconnect
-/// fan-out + `close()` land in Task 3.
+/// The single hard invariant is **map-remove-wins**: `_pending.remove(id)` is
+/// the only way to claim a request, so exactly one of {response, timeout,
+/// disconnect fan-out} completes each [Completer] on Dart's single event loop —
+/// no locks, no double-complete.
 library;
 
 import 'dart:async';
 import 'dart:typed_data';
 
+import '../protocol/ams_header.dart';
 import '../protocol/ams_net_id.dart';
+import '../protocol/ams_tcp_header.dart';
+import '../protocol/constants.dart';
+import '../protocol/exceptions.dart';
+import '../protocol/frame_assembler.dart';
 import '../transport/transport.dart';
+import 'exceptions.dart';
+import 'pending_request.dart';
 
 /// A single multiplexed AMS/TCP connection to one ADS peer.
 ///
@@ -35,7 +42,32 @@ class AmsConnection {
     required AmsAddr source,
     required AmsAddr target,
     Duration defaultTimeout = const Duration(seconds: 5),
-  });
+  })  : _transport = transport,
+        _source = source,
+        _target = target,
+        _defaultTimeout = defaultTimeout;
+
+  final AdsTransport _transport;
+  final AmsAddr _source;
+  final AmsAddr _target;
+  final Duration _defaultTimeout;
+
+  /// Invoke-ID → in-flight request. `remove` is the sole completion claim.
+  final Map<int, PendingRequest> _pending = <int, PendingRequest>{};
+
+  /// The Phase-1 reassembler turning inbound TCP chunks into whole frames.
+  late final FrameAssembler _assembler;
+
+  /// The inbound subscription, cancelled on teardown.
+  StreamSubscription<Uint8List>? _subscription;
+
+  /// Monotonic u32 invoke-ID counter; starts at 1, wraps to 1 (0 is reserved
+  /// for notifications).
+  int _nextInvokeId = 1;
+
+  bool _connected = false;
+  bool _closed = false;
+  final Completer<void> _doneCompleter = Completer<void>();
 
   /// Whether the connection is currently usable (connected and not yet closed).
   bool get isConnected => _connected && !_closed;
@@ -49,29 +81,152 @@ class AmsConnection {
   /// Count of inbound device-notification (cmd 0x08) frames routed to demux.
   int notificationFrames = 0;
 
-  bool _connected = false;
-  bool _closed = false;
-  final Completer<void> _doneCompleter = Completer<void>();
-
   /// Opens the underlying transport to [host]:[port] and wires the inbound
   /// byte stream into the frame reassembler.
+  ///
+  /// Inbound chunks are pushed through a [FrameAssembler]; each complete frame
+  /// is routed to [_onFrame]. A [MalformedFrameException] poisons the assembler
+  /// (the stream is corrupt by definition), so it tears the connection down.
+  /// The stream's `onError`/`onDone` are the disconnect signals fanned out in
+  /// [_failClose].
   Future<void> connect(String host, int port) async {
+    await _transport.connect(host, port);
+    _assembler = FrameAssembler();
     _connected = true;
-    throw UnimplementedError('inbound wiring lands in Task 2');
+    _subscription = _transport.inbound.listen(
+      (chunk) {
+        try {
+          for (final frame in _assembler.add(chunk)) {
+            _onFrame(frame);
+          }
+        } on MalformedFrameException catch (e) {
+          _failClose(e);
+        }
+      },
+      onError: (Object e) => _failClose(e),
+      onDone: () =>
+          _failClose(const AdsConnectionException('peer closed connection')),
+      cancelOnError: false,
+    );
   }
 
   /// Sends [payload] under [commandId] and returns a Future resolving to the
   /// correlated raw response payload (bytes after the 38-byte header prefix).
+  ///
+  /// A per-request [timeout] (or the connection [_defaultTimeout]) removes and
+  /// errors the pending entry with [AdsTimeoutException] on expiry. The write is
+  /// fire-and-forget, so two `request` calls without an `await` between them
+  /// pipeline naturally.
   Future<Uint8List> request(
     int commandId,
     Uint8List payload, {
     Duration? timeout,
-  }) =>
-      throw UnimplementedError();
+  }) {
+    if (!isConnected) {
+      throw const AdsConnectionException('not connected');
+    }
+    final id = _allocInvokeId();
+    final completer = Completer<Uint8List>();
+    final timer = Timer(timeout ?? _defaultTimeout, () {
+      // remove-wins: null if the response already claimed this request.
+      final pending = _pending.remove(id);
+      pending?.completer.completeError(AdsTimeoutException(id, commandId));
+    });
+    _pending[id] = PendingRequest(completer, timer, commandId);
+    _transport.add(_buildFrame(commandId, id, payload));
+    return completer.future;
+  }
 
   /// Gracefully tears the connection down, erroring every pending request.
   Future<void> close() async {
-    _closed = true;
     throw UnimplementedError('disconnect fan-out lands in Task 3');
+  }
+
+  /// Allocates the next monotonic u32 invoke-ID, wrapping `0xFFFFFFFF → 1` and
+  /// never yielding 0 (0 is reserved for notification frames).
+  int _allocInvokeId() {
+    final id = _nextInvokeId;
+    _nextInvokeId = id == 0xFFFFFFFF ? 1 : id + 1;
+    return id;
+  }
+
+  /// Builds the on-wire frame: 6-byte AMS/TCP wrapper + 32-byte AMS header +
+  /// [payload], stamping [invokeId] and [commandId] via the real Phase-1
+  /// encoders (range-checked, little-endian).
+  Uint8List _buildFrame(int commandId, int invokeId, Uint8List payload) {
+    final ams = AmsHeader(
+      targetNetId: _target.netId,
+      targetPort: _target.port,
+      sourceNetId: _source.netId,
+      sourcePort: _source.port,
+      commandId: commandId,
+      stateFlags: AmsStateFlags.request,
+      dataLength: payload.length,
+      errorCode: 0,
+      invokeId: invokeId,
+    ).encode();
+    final tcp =
+        AmsTcpHeader(length: AmsHeader.byteLength + payload.length).encode();
+    final total =
+        AmsTcpHeader.byteLength + AmsHeader.byteLength + payload.length;
+    final out = Uint8List(total)
+      ..setRange(0, AmsTcpHeader.byteLength, tcp)
+      ..setRange(AmsTcpHeader.byteLength,
+          AmsTcpHeader.byteLength + AmsHeader.byteLength, ams)
+      ..setRange(
+          AmsTcpHeader.byteLength + AmsHeader.byteLength, total, payload);
+    return out;
+  }
+
+  /// Routes one complete inbound frame.
+  ///
+  /// Demux-before-lookup: a cmd 0x08 device-notification frame is counted and
+  /// returned WITHOUT touching the pending map or [droppedResponses] (Phase 5
+  /// hangs real notification Streams off this hook). Otherwise the invoke-ID is
+  /// claimed via `_pending.remove`; an unmatched response (late/unknown) is
+  /// counted as dropped and never throws; a valid-invokeId / wrong-command frame
+  /// completes-with-error rather than crossing responses.
+  void _onFrame(Uint8List frame) {
+    final header =
+        AmsHeader.decode(ByteData.sublistView(frame), AmsTcpHeader.byteLength);
+
+    // Demux branch BEFORE the invoke-ID lookup (PROTO-04).
+    if (header.commandId == AdsCommandId.deviceNotification) {
+      notificationFrames++;
+      return;
+    }
+
+    final pending = _pending.remove(header.invokeId);
+    if (pending == null) {
+      // Late/unknown response is EXPECTED after a timeout — count, never throw.
+      droppedResponses++;
+      return;
+    }
+    pending.timer.cancel();
+
+    if (header.commandId != pending.expectedCommandId) {
+      droppedResponses++;
+      pending.completer.completeError(
+        const AdsConnectionException('protocol: command mismatch'),
+      );
+      return;
+    }
+
+    pending.completer.complete(
+      Uint8List.sublistView(
+        frame,
+        AmsTcpHeader.byteLength + AmsHeader.byteLength,
+      ),
+    );
+  }
+
+  /// Single-shot teardown. Full disconnect fan-out (error all pending, close
+  /// notification controllers, complete [done]) lands in Task 3; for now the
+  /// guard and subscription-cancel are in place so `onError`/`onDone` are
+  /// idempotent.
+  void _failClose(Object cause) {
+    if (_closed) return;
+    _closed = true;
+    _subscription?.cancel();
   }
 }
