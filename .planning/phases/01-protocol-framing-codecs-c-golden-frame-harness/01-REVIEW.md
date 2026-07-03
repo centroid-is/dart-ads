@@ -27,7 +27,14 @@ findings:
   warning: 8
   info: 7
   total: 16
-status: issues_found
+resolved:
+  critical: 1
+  warning: 8
+  info: 0
+  total: 9
+fixed_at: 2026-07-03T20:30:00Z
+fix_scope: critical_warning
+status: critical_warning_resolved
 ---
 
 # Phase 1: Code Review Report
@@ -35,7 +42,8 @@ status: issues_found
 **Reviewed:** 2026-07-03T18:24:16Z
 **Depth:** standard
 **Files Reviewed:** 18
-**Status:** issues_found
+**Status:** critical_warning_resolved — all 9 Critical + Warning findings fixed
+(one atomic commit each, 2026-07-03); the 7 Info findings remain open.
 
 ## Summary
 
@@ -78,6 +86,8 @@ socket to these entry points.
 ## Critical Issues
 
 ### CR-01: mock_server dies from SIGPIPE when a client disconnects mid-response
+
+**Resolution:** fixed: `7bc63a0` — `signal(SIGPIPE, SIG_IGN)` in `main()` (portable Linux + macOS) and EINTR retry loop in `sendAll()`.
 
 **File:** `test_harness/mock_server.cpp:216-223` (also 271, 311)
 **Issue:** The delivered accept loop's send path has an unhandled fatal error
@@ -125,6 +135,8 @@ explicitly targets macOS too, which lacks `MSG_NOSIGNAL` — use
 
 ### WR-01: FrameAssembler discards already-completed frames when the max-frame guard throws
 
+**Resolution:** fixed: `8a5ae89` — frames completed before the poison are returned; the guard exception is deferred to the next `add()` (thrown at buffer offset 0) and the poisoned remainder is dropped, so the buffer cannot grow without bound. Regression test added (`frame_assembler_test.dart`).
+
 **File:** `lib/src/protocol/frame_assembler.dart:71-118`
 **Issue:** `add()` collects completed frames into the local `frames` list and
 only compacts `_buffer` after the loop. If chunk `[good frame A][poison
@@ -157,6 +169,8 @@ appending new chunks to a buffer that can never drain.
 
 ### WR-02: FrameAssembler emits structurally impossible frames (length < 32) that crash downstream decoders with RangeError
 
+**Resolution:** fixed: `4dec428` — guard now rejects `length < AmsHeader.byteLength || length > maxFrameBytes` with the typed exception. Regression test covers lengths 0/10/31 and the 32-byte boundary.
+
 **File:** `lib/src/protocol/frame_assembler.dart:90` (guard), `lib/src/protocol/ams_header.dart:92-106` (downstream victim)
 **Issue:** The guard rejects only `length > maxFrameBytes`. A hostile or
 corrupt wrapper declaring `length` in `0..31` is accepted and emitted as a
@@ -180,6 +194,8 @@ if (length < AmsHeader.byteLength || length > maxFrameBytes) {
 (Requires importing `ams_header.dart`, or a local `const _minFrameLength = 32`.)
 
 ### WR-03: AmsHeader.decode escapes the bounds of the ByteData view it is given
+
+**Resolution:** fixed: `eecf2c3` — typed `MalformedFrameException` precondition on available view bytes; NetId reads now go through `Uint8List.sublistView` (range-checked against the view, not the backing buffer). Regression test uses a 16-byte clamped view over a 64-byte buffer.
 
 **File:** `lib/src/protocol/ams_header.dart:93-98`
 **Issue:** `decode` reads the two NetIds via
@@ -215,6 +231,8 @@ factory AmsHeader.decode(ByteData bd, [int offset = 0]) {
 
 ### WR-04: Encoders silently truncate out-of-range field values onto the wire
 
+**Resolution:** fixed: `dcf6655` — shared internal `checkUint` helper (`lib/src/protocol/range_check.dart`, not exported); applied in `AmsAddr` (port, constructor is no longer `const`), `AmsHeader.encode` (all seven integer fields), `AmsTcpHeader.encode` (length), and all integer parameters of the six command encoders. Throws `ArgumentError`. Regression tests in `ams_header_test.dart` + `golden_parity_test.dart`.
+
 **File:** `lib/src/protocol/ams_header.dart:76-83`; `lib/src/protocol/ams_tcp_header.dart:36`; `lib/src/protocol/ams_net_id.dart:95-101`; `lib/src/protocol/commands.dart:165-276`
 **Issue:** Dart's `ByteData.setUint16`/`setUint32` do not range-check — they
 store the low bits. Verified empirically: `setUint16(0, 70000)` writes
@@ -243,6 +261,8 @@ Apply in `AmsAddr` (port), `AmsHeader.encode` (or its constructor),
 
 ### WR-05: mock_server has no inbound max-frame guard — unbounded buffering from a single hostile length field (and a 32-bit size_t overread)
 
+**Resolution:** fixed: `d1e4cf6` — `kMaxFrameBytes = 4 MiB` inbound cap mirroring the Dart guard; violation drops the connection; `frameLen` computed with explicit `static_cast<size_t>` (cap also removes the 32-bit wrap path).
+
 **File:** `test_harness/mock_server.cpp:332-335`
 **Issue:** The server-side reassembly trusts the wire length completely:
 `frameLen = sizeof(AmsTcpHeader) + tcp.length()` with `tcp.length()` up to
@@ -270,6 +290,8 @@ const size_t frameLen = sizeof(AmsTcpHeader) + static_cast<size_t>(tcp.length())
 The cap also eliminates the 32-bit overflow path.
 
 ### WR-06: mock_server responses echo request addressing instead of swapping target/source
+
+**Resolution:** fixed: `12483bf` — addressing swapped in the mock's accept loop, in `--selftest`, and in `dump_golden`'s `wrap()` for response frames; all six `*_res.hex` goldens regenerated (request goldens byte-identical); `golden_parity_test.dart` now asserts response target == request source and response source == request target.
 
 **File:** `test_harness/mock_server.cpp:341-345` (and the same convention in `test_harness/dump_golden.cpp:69-74`)
 **Issue:** For `READ_DEVICE_INFO` the server responds with
@@ -300,6 +322,8 @@ the two frame-length-only assertions if needed (lengths are unchanged).
 
 ### WR-07: dump_golden ignores all I/O errors and always exits 0 — the CI "goldens are reproducible" gate can false-pass
 
+**Resolution:** fixed: `f5384d7` — `writeHex` checks the stream after flush and reports failures on stderr; `main` accumulates per-file results (`ok &=`) and exits 1 on any failure. Verified empirically: unwritable dir → 12 stderr lines + exit 1. (IN-04's untracked-file gap remains open.)
+
 **File:** `test_harness/dump_golden.cpp:93-112, 253`; `.github/workflows/ci.yml:101-104`
 **Issue:** `writeHex` never checks the `ofstream`: if the output path cannot
 be opened (missing directory, permissions, disk full) the write silently does
@@ -329,6 +353,8 @@ Accumulate failures in `main` and `return` non-zero if any write failed.
 golden files.)
 
 ### WR-08: Dart hex fixture reader silently truncates odd-length input, diverging from its C++ twin
+
+**Resolution:** fixed: `be76246` — `readGolden` throws `FormatException` on an odd nibble count, matching `readGoldenHex`. Regression test added (`hex_support_test.dart`).
 
 **File:** `test/support/hex.dart:29-33`
 **Issue:** After stripping comments/whitespace, `Uint8List(cleaned.length ~/
