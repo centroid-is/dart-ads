@@ -97,6 +97,11 @@ None. The harness configured and built cleanly; `mock_server --selftest` exited 
 - The mock binary is ready for Phase 2 to wire live socket round-trips: it already binds ephemeral ports, announces readiness via `LISTENING <port>`, and exposes fragment/coalesce modes to exercise the Dart FrameAssembler.
 - The command table is intentionally ReadDeviceInfo-only; it grows in later phases per the locked decision. Unknown commands are currently ignored in the accept loop — Phase 2 hostile-input hardening (T-1-01, accepted risk here) should revisit that path.
 
+## Self-Check: PASSED
+
+- Files verified present: test_harness/mock_server.cpp, test_harness/CMakeLists.txt, 01-03-SUMMARY.md
+- Commits verified in history: 5d8d42f, 8d255e6, 6f14c5d
+
 ---
 *Phase: 01-protocol-framing-codecs-c-golden-frame-harness*
 *Completed: 2026-07-03*
