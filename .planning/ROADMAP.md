@@ -54,7 +54,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. A request that gets no reply fails with a typed timeout error after the configured per-request timeout
   4. On disconnect, all pending requests error out and all notification streams close (failure fan-out) with no hung Futures
   5. Unsolicited notification frames (cmd 0x0008, no invoke-ID) route to the demux path instead of the invoke-ID map, and connection/codec logic is unit-testable against a fakeable transport with no live socket
-**Plans**: TBD
+**Plans**: 4 plans in 3 waves
+  - [ ] 02-01-PLAN.md — AdsTransport interface + SocketTransport + FakeTransport + transport exceptions (wave 1)
+  - [ ] 02-02-PLAN.md — C++ mock --delay-ms/--close-after modes + shared startMockServer launch helper (wave 1)
+  - [ ] 02-03-PLAN.md — AmsConnection: invoke-ID correlation, timeout, notification demux, single-shot disconnect fan-out (wave 2)
+  - [ ] 02-04-PLAN.md — Live integration tests: connect/round-trip/close + reorder (--delay-ms) + mid-request disconnect (--close-after) (wave 3)
 **UI hint**: no
 
 ### Phase 3: Core ADS Commands & Error Mapping
@@ -151,7 +155,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Protocol Framing, Codecs & Golden-Frame Harness | 7/7 | Complete   | 2026-07-03 |
-| 2. TCP Transport, Lifecycle & Correlation | 0/TBD | Not started | - |
+| 2. TCP Transport, Lifecycle & Correlation | 0/4 | Planned | - |
 | 3. Core ADS Commands & Error Mapping | 0/TBD | Not started | - |
 | 4. AmsRouter & Transport Modes | 0/TBD | Not started | - |
 | 5. Device Notifications as Streams | 0/TBD | Not started | - |
