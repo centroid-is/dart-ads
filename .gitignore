@@ -11,3 +11,4 @@ coverage/
 
 # CMake harness build output (test_harness/)
 test_harness/build/
+test_harness/.build.lock

@@ -96,6 +96,9 @@ Future<MockServer> startMockServer({List<String> args = const []}) async {
   return MockServer(proc, port);
 }
 
+/// Lock file guarding the stale-check + CMake build against concurrent runs.
+const _buildLockPath = 'test_harness/.build.lock';
+
 /// Returns the path to a fresh mock-server binary, rebuilding via CMake when
 /// the binary is missing or older than any of [_mockSources].
 ///
@@ -104,7 +107,53 @@ Future<MockServer> startMockServer({List<String> args = const []}) async {
 /// naming the missing toolchain (or surfacing the build output) if `cmake` is
 /// absent or the build fails, so integration tests fail fast instead of
 /// launching a stale or non-existent binary.
-Future<String> _ensureBuilt() async {
+///
+/// `dart test` runs suites concurrently, and more than one integration suite
+/// calls [startMockServer] — without serialization, two isolates could run
+/// `cmake --build` on the same build tree at once and corrupt it. The whole
+/// stale-check + build is therefore guarded by [_withBuildLock]. (An
+/// exclusive-create lock FILE is used deliberately: `RandomAccessFile.lock`
+/// is a POSIX advisory lock, which does not exclude between isolates of the
+/// same process — exactly the `dart test` topology.)
+Future<String> _ensureBuilt() => _withBuildLock(_ensureBuiltLocked);
+
+/// Runs [body] while holding an exclusive on-disk lock ([_buildLockPath]).
+///
+/// The lock is an atomic `File.create(exclusive: true)` — safe across both
+/// isolates and processes. Contenders poll until the holder deletes the file;
+/// a generous deadline (well above a cold CMake build) turns a stale lock left
+/// by a killed run into a clear error naming the file to delete, instead of a
+/// silent hang.
+Future<T> _withBuildLock<T>(Future<T> Function() body) async {
+  final lock = File(_buildLockPath);
+  final deadline = DateTime.now().add(const Duration(minutes: 5));
+  while (true) {
+    try {
+      await lock.create(exclusive: true);
+      break;
+    } on PathExistsException {
+      if (DateTime.now().isAfter(deadline)) {
+        throw StateError(
+          'timed out waiting for the mock-server build lock $_buildLockPath; '
+          'if no build is running, delete the stale lock file and retry',
+        );
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
+  }
+  try {
+    return await body();
+  } finally {
+    try {
+      await lock.delete();
+    } on FileSystemException {
+      // Best effort: worst case a later run times out with the message above.
+    }
+  }
+}
+
+/// The lock-free body of [_ensureBuilt] — only ever run under [_withBuildLock].
+Future<String> _ensureBuiltLocked() async {
   final binary = File(_mockBinary);
 
   var stale = !binary.existsSync();
