@@ -110,6 +110,10 @@ None - no external service configuration required. The build depends only on CMa
 - The `test_harness/` CMake project is ready for plan 01-03 to add the `mock_server` target alongside `dump_golden` (the two share the `ads_framing` static lib).
 - No blockers. `test_harness/build/` is gitignored; only source + fixtures are committed.
 
+## Self-Check: PASSED
+
+All 14 created files verified present on disk; all 4 commits (7fc7631, 95d9fdc, 40edc09, 0d2ee2f) verified in git log.
+
 ---
 *Phase: 01-protocol-framing-codecs-c-golden-frame-harness*
 *Completed: 2026-07-03*
