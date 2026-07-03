@@ -55,6 +55,18 @@ export 'src/protocol/frame_assembler.dart' show FrameAssembler;
 /// The wire-level framing exception.
 export 'src/protocol/exceptions.dart' show MalformedFrameException;
 
+/// The ADS-agnostic transport seam: the [AdsTransport] interface and its
+/// `dart:io` [SocketTransport] implementation. `FakeTransport` is intentionally
+/// NOT exported — it is an in-memory test double reached via its `src/` path in
+/// same-package unit tests, not part of the public contract.
+export 'src/transport/transport.dart' show AdsTransport;
+export 'src/transport/socket_transport.dart' show SocketTransport;
+
+/// The transport-error-family exceptions, distinct from [MalformedFrameException]
+/// so callers can catch timeouts and disconnects separately.
+export 'src/connection/exceptions.dart'
+    show AdsTimeoutException, AdsConnectionException;
+
 /// Wire-protocol constants (command IDs, state flags, ports, index groups,
 /// device-data offsets, run states, error codes).
 export 'src/protocol/constants.dart'
