@@ -15,7 +15,10 @@ library;
 /// Returns [value] unchanged if it fits an unsigned [bits]-bit wire field,
 /// otherwise throws [ArgumentError] naming the offending [name].
 int checkUint(int value, int bits, String name) {
-  final max = (1 << bits) - 1;
+  // `(1 << 32) - 1` is NOT portable: under dart2js, `1 << 32` evaluates to 0
+  // (JS shift semantics), folding max to -1 and rejecting every value (WR-09).
+  // Build the mask from two sub-31-bit shifts, which are safe on VM and web.
+  final max = ((1 << (bits - 1)) - 1) * 2 + 1;
   if (value < 0 || value > max) {
     throw ArgumentError.value(value, name, 'must fit in u$bits (0..$max)');
   }
