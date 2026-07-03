@@ -76,7 +76,7 @@ Requirements for initial release (full AdsLib parity). Each maps to roadmap phas
 ### Test Harness (C++ / CMake)
 
 - [ ] **TEST-01**: A C++ mock ADS server built via CMake (vendored Beckhoff/ADS) responds with byte-accurate ADS frames
-- [ ] **TEST-02**: A golden-frame dump tool emits reference request/response byte vectors, and Dart codec unit tests assert encode AND decode parity against them
+- [x] **TEST-02**: A golden-frame dump tool emits reference request/response byte vectors, and Dart codec unit tests assert encode AND decode parity against them
 - [ ] **TEST-03**: Dart integration tests launch the mock via `Process.start` with an ephemeral port + stdout readiness handshake and tear it down cleanly
 - [ ] **TEST-04**: The mock deliberately fragments and coalesces frames to exercise TCP stream reassembly
 
@@ -129,7 +129,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | PROTO-01 | Phase 1 | Pending |
 | PROTO-02 | Phase 1 | Pending |
 | TEST-01 | Phase 1 | Pending |
-| TEST-02 | Phase 1 | Pending |
+| TEST-02 | Phase 1 | Complete |
 | TEST-04 | Phase 1 | Pending |
 | TRANS-01 | Phase 2 | Pending |
 | TRANS-02 | Phase 2 | Pending |
