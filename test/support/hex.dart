@@ -19,12 +19,23 @@ import 'dart:typed_data';
 /// `'test/golden/read_device_info_req.hex'`.
 ///
 /// A fully-commented or whitespace-only file decodes to an empty [Uint8List].
+///
+/// Throws [FormatException] if the cleaned content has an odd number of hex
+/// nibbles — matching the C++ twin (`mock_server.cpp` `readGoldenHex`), which
+/// rejects such a file as corrupt. Silently dropping the trailing nibble would
+/// decode a truncated fixture into a shorter-but-plausible byte string and
+/// point the resulting parity failure at the codec instead of the fixture.
 Uint8List readGolden(String path) {
   final cleaned = File(path)
       .readAsLinesSync()
       .map((line) => line.split('#').first) // drop inline comments
       .join()
       .replaceAll(RegExp(r'\s'), ''); // strip all whitespace
+
+  if (cleaned.length.isOdd) {
+    throw FormatException(
+        'odd number of hex nibbles (${cleaned.length}) in $path');
+  }
 
   final out = Uint8List(cleaned.length ~/ 2);
   for (var i = 0; i < out.length; i++) {

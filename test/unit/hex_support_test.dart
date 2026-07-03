@@ -63,6 +63,19 @@ void main() {
       );
     });
 
+    test(
+        'a trailing odd nibble is rejected with FormatException, matching '
+        'the C++ readGoldenHex twin (WR-08)', () {
+      // A fixture corrupted by a truncated write or a bad merge must be an
+      // error, not a silently-shortened byte string.
+      final path = _writeHex(tempDir, 'odd.hex', '00 20 0# comment\n');
+      expect(
+        () => readGolden(path),
+        throwsA(isA<FormatException>()
+            .having((e) => e.message, 'message', contains('odd number'))),
+      );
+    });
+
     test('anchor tolerates # comments interleaved with the hex payload', () {
       const annotated = '''
 0000 20000000                 # AMS/TCP: reserved u16=0, length u32=0x20=32
