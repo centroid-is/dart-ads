@@ -5,7 +5,6 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:dart_ads/dart_ads.dart';
-import 'package:dart_ads/src/connection/ams_connection.dart';
 import 'package:dart_ads/src/transport/fake_transport.dart';
 import 'package:test/test.dart';
 
