@@ -30,6 +30,7 @@
 #include "Frame.h"
 
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <fstream>
 #include <string>
@@ -97,7 +98,12 @@ static Frame payloadFrame(const std::vector<uint8_t>& p)
 }
 
 // ---- Hex file writer -------------------------------------------------------
-static void writeHex(const std::string& dir, const std::string& name,
+// Returns false (and reports on stderr) when the fixture cannot be written.
+// Silent write failures must not exit 0: CI's "goldens are reproducible" gate
+// is `dump_golden && git diff --exit-code` — if nothing were written, the
+// committed files would be untouched, the diff clean, and the gate would
+// false-pass without a single byte having been reproduced.
+static bool writeHex(const std::string& dir, const std::string& name,
                      const std::string& comment, const std::vector<uint8_t>& bytes)
 {
     std::string path = dir;
@@ -116,17 +122,27 @@ static void writeHex(const std::string& dir, const std::string& name,
         h.push_back(kHex[b & 0x0F]);
     }
     out << h << "\n";
+    out.flush();
+    if (!out) {
+        fprintf(stderr, "dump_golden: failed to write %s\n", path.c_str());
+        return false;
+    }
+    return true;
 }
 
 int main(int argc, char** argv)
 {
     const std::string dir = (argc > 1) ? argv[1] : "test/golden/";
 
+    // Any failed fixture write must produce a non-zero exit so the CI
+    // reproducibility gate cannot false-pass on a silent I/O error.
+    bool ok = true;
+
     // --- ReadDeviceInfo 0x01 ------------------------------------------------
     // req: no ADS payload (the verified 38-byte anchor).
     {
         Frame f = payloadFrame({});
-        writeHex(dir, "read_device_info_req",
+        ok &= writeHex(dir, "read_device_info_req",
                  "ReadDeviceInfo req: 192.168.0.1.1.1:851 <- 192.168.0.100.1.1:40001, invokeId 1, no payload",
                  wrap(f, AoEHeader::READ_DEVICE_INFO, false));
     }
@@ -142,7 +158,7 @@ int main(int argc, char** argv)
             p.push_back(static_cast<uint8_t>(name[i]));
         }
         Frame f = payloadFrame(p);
-        writeHex(dir, "read_device_info_res",
+        ok &= writeHex(dir, "read_device_info_res",
                  "ReadDeviceInfo res: result 0, v3.1 build 4024, name 'Dart ADS Mock'",
                  wrap(f, AoEHeader::READ_DEVICE_INFO, true));
     }
@@ -153,7 +169,7 @@ int main(int argc, char** argv)
         Frame f = payloadFrame({});
         const AoERequestHeader req(0x0000F005u, 0x00000123u, 4u);
         f.prepend<AoERequestHeader>(req);
-        writeHex(dir, "read_req",
+        ok &= writeHex(dir, "read_req",
                  "Read req: group 0xF005, offset 0x123, length 4",
                  wrap(f, AoEHeader::READ, false));
     }
@@ -164,7 +180,7 @@ int main(int argc, char** argv)
         putU32(p, 4);          // readLength
         putU32(p, 42);         // 4-byte value payload
         Frame f = payloadFrame(p);
-        writeHex(dir, "read_res",
+        ok &= writeHex(dir, "read_res",
                  "Read res: result 0, readLength 4, data 42",
                  wrap(f, AoEHeader::READ, true));
     }
@@ -179,7 +195,7 @@ int main(int argc, char** argv)
         const AoERequestHeader req(0x0000F005u, 0x00000123u,
                                    static_cast<uint32_t>(data.size()));
         f.prepend<AoERequestHeader>(req);                  // [reqHdr][data]
-        writeHex(dir, "write_req",
+        ok &= writeHex(dir, "write_req",
                  "Write req: group 0xF005, offset 0x123, length 4, data 42",
                  wrap(f, AoEHeader::WRITE, false));
     }
@@ -188,7 +204,7 @@ int main(int argc, char** argv)
         std::vector<uint8_t> p;
         putU32(p, 0);
         Frame f = payloadFrame(p);
-        writeHex(dir, "write_res", "Write res: result 0",
+        ok &= writeHex(dir, "write_res", "Write res: result 0",
                  wrap(f, AoEHeader::WRITE, true));
     }
 
@@ -196,7 +212,7 @@ int main(int argc, char** argv)
     // req: no payload.
     {
         Frame f = payloadFrame({});
-        writeHex(dir, "read_state_req", "ReadState req: no payload",
+        ok &= writeHex(dir, "read_state_req", "ReadState req: no payload",
                  wrap(f, AoEHeader::READ_STATE, false));
     }
     // res: result 0, adsState 5 (RUN), deviceState 0.
@@ -206,7 +222,7 @@ int main(int argc, char** argv)
         putU16(p, 5);          // adsState = ADSSTATE_RUN
         putU16(p, 0);          // deviceState
         Frame f = payloadFrame(p);
-        writeHex(dir, "read_state_res",
+        ok &= writeHex(dir, "read_state_res",
                  "ReadState res: result 0, adsState 5 (RUN), deviceState 0",
                  wrap(f, AoEHeader::READ_STATE, true));
     }
@@ -217,7 +233,7 @@ int main(int argc, char** argv)
         Frame f = payloadFrame({});
         const AdsWriteCtrlRequest req(5u, 0u, 0u);
         f.prepend<AdsWriteCtrlRequest>(req);
-        writeHex(dir, "write_control_req",
+        ok &= writeHex(dir, "write_control_req",
                  "WriteControl req: adsState 5 (RUN), devState 0, length 0",
                  wrap(f, AoEHeader::WRITE_CONTROL, false));
     }
@@ -226,7 +242,7 @@ int main(int argc, char** argv)
         std::vector<uint8_t> p;
         putU32(p, 0);
         Frame f = payloadFrame(p);
-        writeHex(dir, "write_control_res", "WriteControl res: result 0",
+        ok &= writeHex(dir, "write_control_res", "WriteControl res: result 0",
                  wrap(f, AoEHeader::WRITE_CONTROL, true));
     }
 
@@ -241,7 +257,7 @@ int main(int argc, char** argv)
         const AoEReadWriteReqHeader req(0x0000F003u, 0x00000000u, 4u,
                                         static_cast<uint32_t>(writeData.size()));
         f.prepend<AoEReadWriteReqHeader>(req);             // [rwHdr][writeData]
-        writeHex(dir, "read_write_req",
+        ok &= writeHex(dir, "read_write_req",
                  "ReadWrite req: group 0xF003, offset 0, readLen 4, writeLen 8, writeData 'MAIN.foo'",
                  wrap(f, AoEHeader::READ_WRITE, false));
     }
@@ -252,10 +268,10 @@ int main(int argc, char** argv)
         putU32(p, 4);              // readLength
         putU32(p, 0x80000001u);    // returned symbol handle
         Frame f = payloadFrame(p);
-        writeHex(dir, "read_write_res",
+        ok &= writeHex(dir, "read_write_res",
                  "ReadWrite res: result 0, readLength 4, data 0x80000001",
                  wrap(f, AoEHeader::READ_WRITE, true));
     }
 
-    return 0;
+    return ok ? 0 : 1;
 }
