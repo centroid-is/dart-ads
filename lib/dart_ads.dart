@@ -118,8 +118,17 @@ export 'src/router/routing_exception.dart' show AdsRoutingException;
 /// commands, with both-levels [AdsException] mapping. Its typed returns
 /// [AdsStateInfo] (from `readState`) and [DeviceInfo] (from `readDeviceInfo`)
 /// are pure value types.
-export 'src/client/ads_client.dart' show AdsClient;
+export 'src/client/ads_client.dart' show AdsClient, SymbolUploadInfo;
 export 'src/client/ads_types.dart' show AdsStateInfo, DeviceInfo;
+
+/// The RAII-style [AdsHandle] helper: a session-scoped wrapper that resolves a
+/// symbol handle, delegates typed/raw read/write to its [AdsClient], and
+/// auto-releases on `close()` (invalidating itself on a `0x710`/`0x711`
+/// stale-handle error). The raw parser [parseSymbolBlob] and the codec
+/// functions stay package-private — only the [AdsSymbolInfo] value type is
+/// exported, as the result of `AdsClient.browseSymbols`.
+export 'src/client/ads_handle.dart' show AdsHandle;
+export 'src/protocol/symbols.dart' show AdsSymbolInfo;
 
 /// The [AmsRouter] registry: the local-AMS-port allocator (base 30000, 128
 /// slots), the target-NetId → endpoint route table (connections are dialed

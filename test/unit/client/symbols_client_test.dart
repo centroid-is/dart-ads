@@ -224,8 +224,7 @@ void main() {
 
       expect(await future, equals([1, 2, 3, 4]));
       expect(fake.written, hasLength(3));
-      final releaseBd =
-          ByteData.sublistView(outboundPayload(fake.written[2]));
+      final releaseBd = ByteData.sublistView(outboundPayload(fake.written[2]));
       expect(releaseBd.getUint32(0, Endian.little),
           AdsIndexGroup.symbolReleaseHandle);
       expect(releaseBd.getUint32(12, Endian.little), 0x55);
@@ -253,8 +252,8 @@ void main() {
 
       // First read: 0xF00C for the {nSymbols, nSymSize} header (8 bytes).
       final infoBd = ByteData.sublistView(outboundPayload(fake.written.single));
-      expect(infoBd.getUint32(0, Endian.little),
-          AdsIndexGroup.symbolUploadInfo);
+      expect(
+          infoBd.getUint32(0, Endian.little), AdsIndexGroup.symbolUploadInfo);
       expect(infoBd.getUint32(8, Endian.little), 8);
       final infoPayload = Uint8List(8);
       final ib = ByteData.sublistView(infoPayload);
@@ -264,8 +263,7 @@ void main() {
       await pumpEventQueue();
 
       // Second read: 0xF00B for nSymSize bytes.
-      final uploadBd =
-          ByteData.sublistView(outboundPayload(fake.written[1]));
+      final uploadBd = ByteData.sublistView(outboundPayload(fake.written[1]));
       expect(uploadBd.getUint32(0, Endian.little), AdsIndexGroup.symbolUpload);
       expect(uploadBd.getUint32(8, Endian.little), blob.length);
       reply(fake, AdsCommandId.read, readPayload(data: blob));
@@ -322,8 +320,10 @@ void main() {
       final payload = outboundPayload(fake.written[1]);
       final bd = ByteData.sublistView(payload);
       expect(bd.getUint32(0, Endian.little), AdsIndexGroup.symbolValueByHandle);
-      expect(ByteData.sublistView(Uint8List.sublistView(payload, 12))
-          .getFloat32(0, Endian.little), 1.5);
+      expect(
+          ByteData.sublistView(Uint8List.sublistView(payload, 12))
+              .getFloat32(0, Endian.little),
+          1.5);
       reply(fake, AdsCommandId.write, writePayload());
       await pumpEventQueue();
       reply(fake, AdsCommandId.write, writePayload()); // release
@@ -351,8 +351,8 @@ void main() {
       final closeF = handle.close();
       await pumpEventQueue();
       final relBd = ByteData.sublistView(outboundPayload(fake.written[2]));
-      expect(relBd.getUint32(0, Endian.little),
-          AdsIndexGroup.symbolReleaseHandle);
+      expect(
+          relBd.getUint32(0, Endian.little), AdsIndexGroup.symbolReleaseHandle);
       expect(relBd.getUint32(12, Endian.little), 0x99);
       reply(fake, AdsCommandId.write, writePayload());
       await closeF;

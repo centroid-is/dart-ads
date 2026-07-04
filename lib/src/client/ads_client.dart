@@ -203,7 +203,8 @@ class AdsClient {
 
   /// Resolves [name], reads [size] bytes, then releases the handle — even if the
   /// read fails (T-7-01: no handle leak on op failure). Returns raw bytes.
-  Future<Uint8List> readByName(String name, int size, {Duration? timeout}) async {
+  Future<Uint8List> readByName(String name, int size,
+      {Duration? timeout}) async {
     final handle = await getHandleByName(name, timeout: timeout);
     try {
       return await readByHandle(handle, size, timeout: timeout);
@@ -366,7 +367,8 @@ class AdsClient {
       codec.decodeReal(await readByName(name, 4, timeout: timeout));
 
   /// Writes a REAL (f32) by [name].
-  Future<void> writeRealByName(String name, double value, {Duration? timeout}) =>
+  Future<void> writeRealByName(String name, double value,
+          {Duration? timeout}) =>
       writeByName(name, codec.encodeReal(value), timeout: timeout);
 
   /// Reads an LREAL (f64) by [name].
