@@ -91,7 +91,7 @@ void main() {
           indexOffset: 2,
           length: 3,
           transMode: 4,
-          maxDelay100ns: 0x1_0000_0000,
+          maxDelay100ns: 0x100000000,
           cycleTime100ns: 6,
         ),
         throwsA(isA<ArgumentError>()),
@@ -106,7 +106,7 @@ void main() {
           length: 3,
           transMode: 4,
           maxDelay100ns: 5,
-          cycleTime100ns: 0x1_0000_0000,
+          cycleTime100ns: 0x100000000,
         ),
         throwsA(isA<ArgumentError>()),
       );
