@@ -112,6 +112,69 @@ static Frame payloadFrame(const std::vector<uint8_t>& p)
     return Frame(p.size(), p.empty() ? nullptr : p.data());
 }
 
+// ---- Symbol upload blob (Phase 7, SYM-02) ----------------------------------
+// Byte-identical twin of mock_server.cpp buildSymbolUploadBlob (its first two
+// entries): a 30-byte #pragma pack(1) AdsSymbolEntry header (six u32 then three
+// u16) followed by name+NUL, typeName+NUL, comment+NUL. entryLength = 30 +
+// nameLen + typeLen + commentLen + 3 (the three NUL separators). Entry 0
+// (MAIN.counter, base entryLength 62) is rounded UP to a 4-byte boundary (64)
+// with 2 trailing zero-pad bytes so the golden exercises the Dart parser's
+// advance-by-entryLength path (never advance by summed field sizes). The exact
+// same bytes the mock serialises, so the parser + golden + mock all agree.
+struct SymEntry {
+    const char* name;
+    uint32_t iGroup;
+    uint32_t iOffs;
+    uint32_t size;
+    uint32_t dataTypeId;
+    const char* typeName;
+    const char* comment;
+};
+
+static const SymEntry kSymbols[] = {
+    { "MAIN.counter", 0x4020u, 0x00u, 4u, 3u, "DINT", "cycle counter" },
+    { "MAIN.flag", 0x4020u, 0x04u, 1u, 33u, "BOOL", "" },
+};
+static const size_t kSymCount = sizeof(kSymbols) / sizeof(kSymbols[0]);
+
+static std::vector<uint8_t> buildSymbolUploadBlob()
+{
+    std::vector<uint8_t> blob;
+    for (size_t si = 0; si < kSymCount; ++si) {
+        const SymEntry& s = kSymbols[si];
+        const uint16_t nameLen = static_cast<uint16_t>(std::strlen(s.name));
+        const uint16_t typeLen = static_cast<uint16_t>(std::strlen(s.typeName));
+        const uint16_t commentLen =
+            static_cast<uint16_t>(std::strlen(s.comment));
+        uint32_t entryLength = 30u + nameLen + typeLen + commentLen + 3u;
+        uint32_t pad = 0;
+        if (si == 0) {
+            const uint32_t aligned = (entryLength + 3u) & ~3u;
+            pad = aligned - entryLength;
+            entryLength = aligned;
+        }
+        putU32(blob, entryLength);
+        putU32(blob, s.iGroup);
+        putU32(blob, s.iOffs);
+        putU32(blob, s.size);
+        putU32(blob, s.dataTypeId);
+        putU32(blob, 0u); // flags (ADSSYMBOLFLAG_*) — none set for the mock
+        putU16(blob, nameLen);
+        putU16(blob, typeLen);
+        putU16(blob, commentLen);
+        blob.insert(blob.end(), s.name, s.name + nameLen);
+        blob.push_back(0); // name NUL
+        blob.insert(blob.end(), s.typeName, s.typeName + typeLen);
+        blob.push_back(0); // typeName NUL
+        blob.insert(blob.end(), s.comment, s.comment + commentLen);
+        blob.push_back(0); // comment NUL
+        for (uint32_t pi = 0; pi < pad; ++pi) {
+            blob.push_back(0); // entry padding, absorbed by entryLength
+        }
+    }
+    return blob;
+}
+
 // ---- Hex file writer -------------------------------------------------------
 // Returns false (and reports on stderr) when the fixture cannot be written.
 // Silent write failures must not exit 0: CI's "goldens are reproducible" gate
@@ -286,6 +349,65 @@ int main(int argc, char** argv)
         ok &= writeHex(dir, "read_write_res",
                  "ReadWrite res: result 0, readLength 4, data 0x80000001",
                  wrap(f, AoEHeader::READ_WRITE, true));
+    }
+
+    // --- Symbol handle (SYM-01) + upload info/blob (SYM-02) -----------------
+    // handle req: 0xF003 GET_SYMHANDLE_BYNAME ReadWrite, readLen 4, writeData =
+    //   the NUL-terminated symbol name the client resolves. Uses MAIN.counter so
+    //   the resolved name lines up with the padded entry 0 of the upload blob.
+    {
+        const char* sym = "MAIN.counter";
+        std::vector<uint8_t> writeData(sym, sym + std::strlen(sym));
+        writeData.push_back(0); // NUL terminator (client sends it)
+        Frame f = payloadFrame({});
+        f.prepend(writeData.data(), writeData.size());     // [writeData]
+        const AoEReadWriteReqHeader req(0x0000F003u, 0x00000000u, 4u,
+                                        static_cast<uint32_t>(writeData.size()));
+        f.prepend<AoEReadWriteReqHeader>(req);             // [rwHdr][writeData]
+        ok &= writeHex(dir, "sym_handle_req",
+                 "SYM handle req: group 0xF003, offset 0, readLen 4, writeLen 13, "
+                 "writeData 'MAIN.counter\\0'",
+                 wrap(f, AoEHeader::READ_WRITE, false));
+    }
+    // handle res: result 0, readLength 4, data = handle 0x00000123 (LE 23 01 00 00).
+    {
+        std::vector<uint8_t> p;
+        putU32(p, 0);              // result
+        putU32(p, 4);              // readLength
+        putU32(p, 0x00000123u);    // returned symbol handle
+        Frame f = payloadFrame(p);
+        ok &= writeHex(dir, "sym_handle_res",
+                 "SYM handle res: result 0, readLength 4, handle 0x00000123",
+                 wrap(f, AoEHeader::READ_WRITE, true));
+    }
+    // uploadinfo res: 0xF00C Read, result 0, readLength 8, data = {nSymbols=2,
+    //   nSymSize = total 0xF00B blob byte count}.
+    {
+        const std::vector<uint8_t> blob = buildSymbolUploadBlob();
+        std::vector<uint8_t> p;
+        putU32(p, 0);                                       // result
+        putU32(p, 8);                                       // readLength
+        putU32(p, static_cast<uint32_t>(kSymCount));        // nSymbols = 2
+        putU32(p, static_cast<uint32_t>(blob.size()));      // nSymSize
+        Frame f = payloadFrame(p);
+        ok &= writeHex(dir, "sym_uploadinfo_res",
+                 "SYM_UPLOADINFO res: result 0, readLength 8, nSymbols 2, "
+                 "nSymSize = 2-symbol blob byte count",
+                 wrap(f, AoEHeader::READ, true));
+    }
+    // upload blob res: 0xF00B Read, result 0, readLength = blob.size(), data =
+    //   the byte-exact 2-symbol AdsSymbolEntry blob (entry 0 padded 62->64).
+    {
+        const std::vector<uint8_t> blob = buildSymbolUploadBlob();
+        std::vector<uint8_t> p;
+        putU32(p, 0);                                       // result
+        putU32(p, static_cast<uint32_t>(blob.size()));      // readLength
+        p.insert(p.end(), blob.begin(), blob.end());        // symbol blob
+        Frame f = payloadFrame(p);
+        ok &= writeHex(dir, "sym_upload_blob",
+                 "SYM_UPLOAD res: result 0, 2-symbol AdsSymbolEntry blob "
+                 "(MAIN.counter padded 62->64 + 2 zero bytes, MAIN.flag)",
+                 wrap(f, AoEHeader::READ, true));
     }
 
     // --- SUMUP_READ 0xF080 (batched read) ----------------------------------
