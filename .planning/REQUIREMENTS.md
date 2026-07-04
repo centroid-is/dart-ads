@@ -50,10 +50,10 @@ Requirements for initial release (full AdsLib parity). Each maps to roadmap phas
 
 ### Sum (Batched) Commands
 
-- [ ] **SUM-01**: User can issue a batched SUMUP_READ (0xF080) returning per-item results as `List<Result<T>>`
-- [ ] **SUM-02**: User can issue a batched SUMUP_WRITE (0xF081) returning per-item results
-- [ ] **SUM-03**: User can issue a batched SUMUP_READWRITE (0xF082) returning per-item results
-- [ ] **SUM-04**: Library parses the per-item error array so partial failures are surfaced per item, never as a whole-batch throw
+- [x] **SUM-01**: User can issue a batched SUMUP_READ (0xF080) returning per-item results as `List<Result<T>>`
+- [x] **SUM-02**: User can issue a batched SUMUP_WRITE (0xF081) returning per-item results
+- [x] **SUM-03**: User can issue a batched SUMUP_READWRITE (0xF082) returning per-item results
+- [x] **SUM-04**: Library parses the per-item error array so partial failures are surfaced per item, never as a whole-batch throw
 
 ### Symbols & Typed Values
 
@@ -155,10 +155,10 @@ Which phases cover which requirements. Populated during roadmap creation.
 | NOTIF-02 | Phase 5 | Complete |
 | NOTIF-03 | Phase 5 | Complete |
 | NOTIF-04 | Phase 5 | Complete |
-| SUM-01 | Phase 6 | Pending |
-| SUM-02 | Phase 6 | Pending |
-| SUM-03 | Phase 6 | Pending |
-| SUM-04 | Phase 6 | Pending |
+| SUM-01 | Phase 6 | Complete |
+| SUM-02 | Phase 6 | Complete |
+| SUM-03 | Phase 6 | Complete |
+| SUM-04 | Phase 6 | Complete |
 | SYM-01 | Phase 7 | Pending |
 | SYM-02 | Phase 7 | Pending |
 | SYM-03 | Phase 7 | Pending |

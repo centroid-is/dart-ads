@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Core ADS Commands & Error Mapping** - Read/Write/ReadWrite/ReadState/WriteControl/ReadDeviceInfo with typed exceptions (completed 2026-07-04)
 - [x] **Phase 4: AmsRouter & Direct / Local-Router Transport Modes** - NetId routing, runtime transport selection, and actionable 1861 route errors (completed 2026-07-04)
 - [x] **Phase 5: Device Notifications as Streams** - Subscribe/cancel as Dart Streams with nested stamp/sample demux and handle lifecycle (completed 2026-07-04)
-- [ ] **Phase 6: Sum (Batched) Commands** - Batched read/write/readwrite with per-item partial-failure results
+- [x] **Phase 6: Sum (Batched) Commands** - Batched read/write/readwrite with per-item partial-failure results (completed 2026-07-04)
 - [ ] **Phase 7: Symbol Access, Browse & Typed Values** - Handle-by-name, symbol table browse, and scalar type conversion
 - [ ] **Phase 8: Dart CLI** - browse/read/write/subscribe/pull/push/action operator tool over the full library
 - [ ] **Phase 9: Packaging & Publishing** - Native-only platform declaration, .pubignore, and pub.dev publish readiness
@@ -129,7 +129,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   - [x] 06-03-PLAN.md — dump_golden sum emit + 6 multi-item golden fixtures (mid-batch failure + returned-len frozen) (wave 1)
   - [x] 06-04-PLAN.md — AdsClient sumRead/sumWrite/sumReadWrite + barrel exports + FakeTransport no-throw unit tests (wave 2)
   - [x] 06-05-PLAN.md — Byte-for-byte sum golden parity + alignment/returned-length assertions (wave 2)
-  - [ ] 06-06-PLAN.md — Live integration: batch RW/RWRW, read-after-sumWrite, SUM-04 partial failure, 100-item single-frame batch (wave 3)
+  - [x] 06-06-PLAN.md — Live integration: batch RW/RWRW, read-after-sumWrite, SUM-04 partial failure, 100-item single-frame batch (wave 3)
 **UI hint**: no
 
 ### Phase 7: Symbol Access, Browse & Typed Values
@@ -181,7 +181,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 3. Core ADS Commands & Error Mapping | 6/6 | Complete   | 2026-07-04 |
 | 4. AmsRouter & Transport Modes | 4/4 | Complete   | 2026-07-04 |
 | 5. Device Notifications as Streams | 6/6 | Complete   | 2026-07-04 |
-| 6. Sum (Batched) Commands | 5/6 | In Progress|  |
+| 6. Sum (Batched) Commands | 6/6 | Complete   | 2026-07-04 |
 | 7. Symbol Access, Browse & Typed Values | 0/TBD | Not started | - |
 | 8. Dart CLI | 0/TBD | Not started | - |
 | 9. Packaging & Publishing | 0/TBD | Not started | - |
