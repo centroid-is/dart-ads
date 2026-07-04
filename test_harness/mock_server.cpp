@@ -716,9 +716,11 @@ static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN,
         uint32_t nextSymHandle = 1;
         uint16_t curAdsState = static_cast<uint16_t>(ADSSTATE_RUN); // 5 — seed to RUN
         uint16_t curDeviceState = 0;
-        // Seed one fixture matching the read_req golden key so a pure Read (with no
-        // prior Write) returns meaningful bytes.
-        store[{ 0x4025u, 0x123u }] = { 0x2A, 0x00, 0x00, 0x00 };  // seed moved off 0xF005 (now SYM_VALBYHND)
+        // Seed one fixture at the read_req golden key {0x4025, 0x123} so a pure
+        // Read (with no prior Write) returns meaningful bytes. The scratch group
+        // was relocated from 0xF005 to 0x4025 when 0xF005 became SYM_VALBYHND;
+        // dump_golden bakes the same {0x4025, 0x123} key into read_req/write_req.
+        store[{ 0x4025u, 0x123u }] = { 0x2A, 0x00, 0x00, 0x00 };
         // Seed the value store at each symbol's {iGroup, iOffs} so a read-by-handle
         // with no prior write returns a well-defined zero-filled buffer of the
         // symbol's declared size (MAIN.counter=4, flag=1, text=81, temp=8).

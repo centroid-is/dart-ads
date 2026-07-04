@@ -242,13 +242,14 @@ int main(int argc, char** argv)
     }
 
     // --- Read 0x02 ----------------------------------------------------------
-    // req: group 0xF005 (SYM_VALBYHND), offset 0x00000123 (handle), length 4.
+    // req: group 0x4025 (scratch, off the reserved 0xF005 SYM_VALBYHND range),
+    // offset 0x00000123, length 4. Matches the mock's {0x4025, 0x123} seed.
     {
         Frame f = payloadFrame({});
-        const AoERequestHeader req(0x0000F005u, 0x00000123u, 4u);
+        const AoERequestHeader req(0x00004025u, 0x00000123u, 4u);
         f.prepend<AoERequestHeader>(req);
         ok &= writeHex(dir, "read_req",
-                 "Read req: group 0xF005, offset 0x123, length 4",
+                 "Read req: group 0x4025, offset 0x123, length 4",
                  wrap(f, AoEHeader::READ, false));
     }
     // res: result 0, readLength 4, data = 42 (0x0000002A LE).
@@ -264,17 +265,17 @@ int main(int argc, char** argv)
     }
 
     // --- Write 0x03 ---------------------------------------------------------
-    // req: group 0xF005, offset 0x123, length 4, data = 42.
+    // req: group 0x4025 (scratch), offset 0x123, length 4, data = 42.
     {
         std::vector<uint8_t> data;
         putU32(data, 42);
         Frame f = payloadFrame({});
         f.prepend(data.data(), data.size());               // [data]
-        const AoERequestHeader req(0x0000F005u, 0x00000123u,
+        const AoERequestHeader req(0x00004025u, 0x00000123u,
                                    static_cast<uint32_t>(data.size()));
         f.prepend<AoERequestHeader>(req);                  // [reqHdr][data]
         ok &= writeHex(dir, "write_req",
-                 "Write req: group 0xF005, offset 0x123, length 4, data 42",
+                 "Write req: group 0x4025, offset 0x123, length 4, data 42",
                  wrap(f, AoEHeader::WRITE, false));
     }
     // res: result 0.

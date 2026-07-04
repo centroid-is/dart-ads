@@ -110,7 +110,7 @@ void main() {
         target: _target,
         source: _source,
         invokeId: _invokeId,
-        indexGroup: 0xF005,
+        indexGroup: 0x4025,
         indexOffset: 0x123,
         length: 4,
       );
@@ -122,7 +122,7 @@ void main() {
         target: _target,
         source: _source,
         invokeId: _invokeId,
-        indexGroup: 0xF005,
+        indexGroup: 0x4025,
         indexOffset: 0x123,
         data: _u32le(42),
       );
@@ -239,7 +239,7 @@ void main() {
           target: _target,
           source: _source,
           invokeId: _invokeId,
-          indexGroup: 0xF005,
+          indexGroup: 0x4025,
           indexOffset: 0x123,
           length: -1,
         ),
