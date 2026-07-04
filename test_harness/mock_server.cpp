@@ -582,6 +582,55 @@ static void emitHostileNotification(int fd, TransmitMode mode, size_t fragmentN,
     sendNotificationFrame(fd, frame, mode, fragmentN, coalesceBuf);
 }
 
+// ---- Symbol upload blob (Phase 7, SYM-02) ----------------------------------
+// Serialise the fixed symbol table into a single SYM_UPLOAD (0xF00B) blob,
+// byte-exact against the vendored AdsSymbolEntry layout (30-byte pack(1) header
+// then name+NUL, typeName+NUL, comment+NUL). entryLength = 30 + nameLen +
+// typeLen + commentLen + 3 (the three NUL separators). For exactly ONE entry
+// (index 0) entryLength is rounded UP to a 4-byte boundary with extra trailing
+// zero-padding, so the blob exercises the Dart parser's advance-by-entryLength
+// path (never advance by summed field sizes). Deterministic — the same bytes
+// dump_golden emits, so the Dart parser and the golden fixtures agree.
+static std::vector<uint8_t> buildSymbolUploadBlob()
+{
+    std::vector<uint8_t> blob;
+    for (size_t si = 0; si < kSymbolCount; ++si) {
+        const MockSymbol& s = kSymbolTable[si];
+        const uint16_t nameLen = static_cast<uint16_t>(std::strlen(s.name));
+        const uint16_t typeLen = static_cast<uint16_t>(std::strlen(s.typeName));
+        const uint16_t commentLen =
+            static_cast<uint16_t>(std::strlen(s.comment));
+        uint32_t entryLength = 30u + nameLen + typeLen + commentLen + 3u;
+        // Pad ONE entry (index 0) up to the next 4-byte boundary to exercise the
+        // parser's padding-tolerant advance-by-entryLength.
+        uint32_t pad = 0;
+        if (si == 0) {
+            const uint32_t aligned = (entryLength + 3u) & ~3u;
+            pad = aligned - entryLength;
+            entryLength = aligned;
+        }
+        putU32(blob, entryLength);
+        putU32(blob, s.iGroup);
+        putU32(blob, s.iOffs);
+        putU32(blob, s.size);
+        putU32(blob, s.dataTypeId);
+        putU32(blob, 0u); // flags (ADSSYMBOLFLAG_*) — none set for the mock
+        putU16(blob, nameLen);
+        putU16(blob, typeLen);
+        putU16(blob, commentLen);
+        blob.insert(blob.end(), s.name, s.name + nameLen);
+        blob.push_back(0); // name NUL
+        blob.insert(blob.end(), s.typeName, s.typeName + typeLen);
+        blob.push_back(0); // typeName NUL
+        blob.insert(blob.end(), s.comment, s.comment + commentLen);
+        blob.push_back(0); // comment NUL
+        for (uint32_t pi = 0; pi < pad; ++pi) {
+            blob.push_back(0); // entry padding, absorbed by entryLength
+        }
+    }
+    return blob;
+}
+
 // ---- Live accept loop (built in Phase 1; exercised over a socket in Phase 2) -
 //
 // delayMs > 0 (--delay-ms): defer the FIRST response of each connection and
@@ -836,6 +885,49 @@ static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN,
                                 std::copy(it->second.begin(),
                                           it->second.begin() + n, data.begin());
                             }
+                            std::vector<uint8_t> p;
+                            putU32(p, 0);      // result = 0
+                            putU32(p, length); // readLength
+                            p.insert(p.end(), data.begin(), data.end());
+                            Frame f(p.size(), p.data());
+                            res = wrapResponse(f, AoEHeader::READ, rTarget,
+                                               rTargetPort, rSource, rSourcePort,
+                                               rInvoke);
+                            haveRes = true;
+                            break;
+                        }
+                        // 0xF00C SYM_UPLOADINFO: 8-byte {nSymbols u32, nSymSize u32}
+                        // where nSymSize = total bytes of the 0xF00B blob.
+                        if (group == kSymUploadInfoGroup) {
+                            const std::vector<uint8_t> blob =
+                                buildSymbolUploadBlob();
+                            std::vector<uint8_t> info;
+                            putU32(info, static_cast<uint32_t>(kSymbolCount));
+                            putU32(info, static_cast<uint32_t>(blob.size()));
+                            const size_t n = std::min(
+                                static_cast<size_t>(length), info.size());
+                            std::vector<uint8_t> data(length, 0);
+                            std::copy(info.begin(), info.begin() + n, data.begin());
+                            std::vector<uint8_t> p;
+                            putU32(p, 0);      // result = 0
+                            putU32(p, length); // readLength (client requests 8)
+                            p.insert(p.end(), data.begin(), data.end());
+                            Frame f(p.size(), p.data());
+                            res = wrapResponse(f, AoEHeader::READ, rTarget,
+                                               rTargetPort, rSource, rSourcePort,
+                                               rInvoke);
+                            haveRes = true;
+                            break;
+                        }
+                        // 0xF00B SYM_UPLOAD: the byte-exact symbol blob, truncated
+                        // to the requested read length (client reads nSymSize bytes).
+                        if (group == kSymUploadGroup) {
+                            const std::vector<uint8_t> blob =
+                                buildSymbolUploadBlob();
+                            std::vector<uint8_t> data(length, 0);
+                            const size_t n = std::min(
+                                static_cast<size_t>(length), blob.size());
+                            std::copy(blob.begin(), blob.begin() + n, data.begin());
                             std::vector<uint8_t> p;
                             putU32(p, 0);      // result = 0
                             putU32(p, length); // readLength
