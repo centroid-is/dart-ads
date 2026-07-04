@@ -60,6 +60,13 @@ static void putU32(std::vector<uint8_t>& v, uint32_t x)
     }
 }
 
+static void putU64(std::vector<uint8_t>& v, uint64_t x)
+{
+    for (int i = 0; i < 8; ++i) {
+        v.push_back(static_cast<uint8_t>((x >> (8 * i)) & 0xFF));
+    }
+}
+
 // Offset of AoEHeader::leStateFlags within the 32-byte AMS header:
 //   targetNetId[6] leTargetPort[2] sourceNetId[6] leSourcePort[2] leCmdId[2] => 18
 static const size_t kStateFlagsInAms = 18;
@@ -271,6 +278,101 @@ int main(int argc, char** argv)
         ok &= writeHex(dir, "read_write_res",
                  "ReadWrite res: result 0, readLength 4, data 0x80000001",
                  wrap(f, AoEHeader::READ_WRITE, true));
+    }
+
+    // --- AddDeviceNotification 0x06 ----------------------------------------
+    // req: the 40-byte AdsAddDeviceNotificationRequest layout (AmsHeader.h:92),
+    //      written as explicit LE scalars in the SAME field order as the pure
+    //      Dart buildAddNotificationPayload. Uses the C++ parity attribs
+    //      {cbLength=1, nTransMode=SERVERCYCLE(3), nMaxDelay=0,
+    //      nCycleTime=1000000 (100ns = 100ms)} from 05-RESEARCH so this golden
+    //      doubles as the parity anchor. group 0x4020, offset 4.
+    {
+        std::vector<uint8_t> p;
+        putU32(p, 0x00004020u); // indexGroup
+        putU32(p, 4u);          // indexOffset
+        putU32(p, 1u);          // cbLength
+        putU32(p, 3u);          // nTransMode = ADSTRANS_SERVERCYCLE
+        putU32(p, 0u);          // nMaxDelay (100ns)
+        putU32(p, 1000000u);    // nCycleTime (100ns) = 100 ms
+        for (int i = 0; i < 16; ++i) {
+            p.push_back(0); // reserved[16] — the classic off-by-16 guard
+        }
+        Frame f = payloadFrame(p);
+        ok &= writeHex(dir, "add_notification_req",
+                 "AddDeviceNotification req: group 0x4020, offset 4, cbLength 1, "
+                 "transMode 3 (SERVERCYCLE), maxDelay 0, cycleTime 1000000, reserved[16]=0",
+                 wrap(f, AoEHeader::ADD_DEVICE_NOTIFICATION, false));
+    }
+    // res: result 0, notificationHandle 0x0A0B0C0D (a distinctive handle).
+    {
+        std::vector<uint8_t> p;
+        putU32(p, 0);           // result
+        putU32(p, 0x0A0B0C0Du); // notificationHandle
+        Frame f = payloadFrame(p);
+        ok &= writeHex(dir, "add_notification_res",
+                 "AddDeviceNotification res: result 0, handle 0x0A0B0C0D",
+                 wrap(f, AoEHeader::ADD_DEVICE_NOTIFICATION, true));
+    }
+
+    // --- DeleteDeviceNotification 0x07 -------------------------------------
+    // req: notificationHandle 0x0A0B0C0D (matches the Add response handle).
+    {
+        std::vector<uint8_t> p;
+        putU32(p, 0x0A0B0C0Du); // notificationHandle
+        Frame f = payloadFrame(p);
+        ok &= writeHex(dir, "del_notification_req",
+                 "DeleteDeviceNotification req: handle 0x0A0B0C0D",
+                 wrap(f, AoEHeader::DEL_DEVICE_NOTIFICATION, false));
+    }
+    // res: result 0.
+    {
+        std::vector<uint8_t> p;
+        putU32(p, 0);           // result
+        Frame f = payloadFrame(p);
+        ok &= writeHex(dir, "del_notification_res",
+                 "DeleteDeviceNotification res: result 0",
+                 wrap(f, AoEHeader::DEL_DEVICE_NOTIFICATION, true));
+    }
+
+    // --- Device notification stream 0x08 (unsolicited) — nested 2x2 --------
+    // A doubly-nested frame (NotificationDispatcher.cpp:56) that proves the
+    // full stamp x sample loop: 2 stamps, each with distinct FILETIME and 2
+    // samples of distinct handle/size/data.
+    //   stamp0 @ ts=132000000000000000: {h1,4B: 11 22 33 44} {h2,2B: aa bb}
+    //   stamp1 @ ts=132000000010000000: {h1,1B: 55}          {h3,0B: (none)}
+    // Both timestamps are whole-microsecond FILETIMEs (multiples of 10) so the
+    // FILETIME->DateTime round-trip is lossless. The leading `length` is
+    // backfilled to the byte count AFTER it.
+    {
+        std::vector<uint8_t> p;
+        putU32(p, 0);           // length (backfilled below)
+        putU32(p, 2);           // stamps = 2
+        // stamp 0
+        putU64(p, 132000000000000000ULL); // timestamp (FILETIME)
+        putU32(p, 2);           // sampleCount
+        putU32(p, 1); putU32(p, 4);       // sample0: handle 1, size 4
+        p.push_back(0x11); p.push_back(0x22); p.push_back(0x33); p.push_back(0x44);
+        putU32(p, 2); putU32(p, 2);       // sample1: handle 2, size 2
+        p.push_back(0xaa); p.push_back(0xbb);
+        // stamp 1
+        putU64(p, 132000000010000000ULL); // timestamp (1s later)
+        putU32(p, 2);           // sampleCount
+        putU32(p, 1); putU32(p, 1);       // sample0: handle 1, size 1
+        p.push_back(0x55);
+        putU32(p, 3); putU32(p, 0);       // sample1: handle 3, size 0 (no data)
+        // Backfill the leading length = bytes following the length field.
+        const uint32_t len = static_cast<uint32_t>(p.size() - 4);
+        p[0] = static_cast<uint8_t>(len & 0xFF);
+        p[1] = static_cast<uint8_t>((len >> 8) & 0xFF);
+        p[2] = static_cast<uint8_t>((len >> 16) & 0xFF);
+        p[3] = static_cast<uint8_t>((len >> 24) & 0xFF);
+        Frame f = payloadFrame(p);
+        ok &= writeHex(dir, "notification_stream",
+                 "DeviceNotification stream: 2 stamps x 2 samples "
+                 "(stamp0 ts=132000000000000000 {h1:11223344}{h2:aabb}, "
+                 "stamp1 ts=132000000010000000 {h1:55}{h3:})",
+                 wrap(f, AoEHeader::DEVICE_NOTIFICATION, true));
     }
 
     return ok ? 0 : 1;
