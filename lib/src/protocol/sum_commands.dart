@@ -142,7 +142,8 @@ final class SumResult<T> {
       isSuccess ? value as T : throw AdsException.fromCode(errorCode);
 
   @override
-  String toString() => 'SumResult(errorCode: $errorCode, isSuccess: $isSuccess)';
+  String toString() =>
+      'SumResult(errorCode: $errorCode, isSuccess: $isSuccess)';
 }
 
 // ---------------------------------------------------------------------------
@@ -233,11 +234,143 @@ final class SumResult<T> {
         o + 4, checkUint(it.indexOffset, 32, 'indexOffset'), Endian.little);
     bd.setUint32(
         o + 8, checkUint(it.readLength, 32, 'readLength'), Endian.little);
-    bd.setUint32(o + 12,
-        checkUint(it.writeData.length, 32, 'writeData.length'), Endian.little);
+    bd.setUint32(o + 12, checkUint(it.writeData.length, 32, 'writeData.length'),
+        Endian.little);
     out.setRange(dataCursor, dataCursor + it.writeData.length, it.writeData);
     dataCursor += it.writeData.length;
     o += 16;
   }
   return (out, n * 8 + readTotal);
+}
+
+// ---------------------------------------------------------------------------
+// Decoders — inner read-buffer -> per-item results
+// ---------------------------------------------------------------------------
+//
+// All three take the INNER read-buffer (ReadWriteResponse.data after the outer
+// decode). None throws on a per-item error word — partial failure is a value,
+// not an exception (SUM-04). Only an over-run of the buffer throws
+// MalformedFrameException, mirroring `_decodeResultAndData` (threat T-6-01).
+
+/// Decodes a SUMUP_READ (0xF080) inner read-buffer into per-item results.
+///
+/// Layout: `N × u32` error words (item order) THEN concatenated data blocks.
+/// The READ response carries NO per-item length, so [items] supplies the
+/// requested `length_i` used to slice each block.
+///
+/// Frozen 0-byte-on-failure convention (see the library doc-comment): a failed
+/// item (`err != 0`) yields an EMPTY value and advances the data cursor by `0`;
+/// a successful item advances the cursor by its requested `length_i`. This keeps
+/// every other item's data at the correct offset (the SUM-04 alignment rule).
+/// This convention is frozen by the golden fixtures — FLAGGED for the Phase 9
+/// parity audit (no C++ AdsLibTest sum scenario cross-validates it).
+///
+/// Bounds-checks `cursor + length_i <= data.length` before every slice, throwing
+/// [MalformedFrameException] on an over-run before reading (T-6-01).
+List<SumResult<Uint8List>> decodeSumReadResponse(
+  Uint8List data,
+  List<SumReadRequest> items,
+) {
+  final n = items.length;
+  _requireHeader(data, n * 4, 'SUMUP_READ response');
+  final bd = ByteData.sublistView(data);
+  final results = <SumResult<Uint8List>>[];
+  var cursor = n * 4;
+  for (var i = 0; i < n; i++) {
+    final err = bd.getUint32(i * 4, Endian.little);
+    if (err != 0) {
+      results.add(SumResult<Uint8List>(errorCode: err, value: _emptyBytes));
+      continue; // failed item: 0 data bytes, cursor unchanged.
+    }
+    final len = items[i].length;
+    _requireBlock(data, cursor, len, 'SUMUP_READ response', i);
+    results.add(SumResult<Uint8List>(
+      errorCode: 0,
+      value: Uint8List.fromList(data.sublist(cursor, cursor + len)),
+    ));
+    cursor += len;
+  }
+  return results;
+}
+
+/// Decodes a SUMUP_WRITE (0xF081) inner read-buffer into per-item results.
+///
+/// Layout: `N × u32` error words only. Successful items carry no data, so every
+/// result's value is `null` (`T == void`).
+List<SumResult<void>> decodeSumWriteResponse(Uint8List data, int n) {
+  _requireHeader(data, n * 4, 'SUMUP_WRITE response');
+  final bd = ByteData.sublistView(data);
+  return <SumResult<void>>[
+    for (var i = 0; i < n; i++)
+      SumResult<void>(errorCode: bd.getUint32(i * 4, Endian.little)),
+  ];
+}
+
+/// Decodes a SUMUP_READWRITE (0xF082) inner read-buffer into per-item results.
+///
+/// Layout: `N × (result u32, returnedLength u32)` headers (item order) THEN
+/// concatenated data blocks. Each block *i* is sliced by the RETURNED length
+/// from the response header — NEVER the requested `readLength` (a failed item's
+/// returned length is `0`). The requested length is only an upper bound.
+///
+/// Bounds-checks `cursor + returnedLength_i <= data.length` before every slice,
+/// throwing [MalformedFrameException] on an over-run (T-6-01).
+List<SumResult<Uint8List>> decodeSumReadWriteResponse(Uint8List data, int n) {
+  _requireHeader(data, n * 8, 'SUMUP_READWRITE response');
+  final bd = ByteData.sublistView(data);
+  final errs = List<int>.filled(n, 0);
+  final lens = List<int>.filled(n, 0);
+  for (var i = 0; i < n; i++) {
+    errs[i] = bd.getUint32(i * 8, Endian.little);
+    lens[i] = bd.getUint32(i * 8 + 4, Endian.little);
+  }
+  final results = <SumResult<Uint8List>>[];
+  var cursor = n * 8;
+  for (var i = 0; i < n; i++) {
+    final len = lens[i];
+    _requireBlock(data, cursor, len, 'SUMUP_READWRITE response', i);
+    results.add(SumResult<Uint8List>(
+      errorCode: errs[i],
+      value: Uint8List.fromList(data.sublist(cursor, cursor + len)),
+    ));
+    cursor += len;
+  }
+  return results;
+}
+
+// ---------------------------------------------------------------------------
+// Internals
+// ---------------------------------------------------------------------------
+
+/// A shared empty value for failed READ items.
+final Uint8List _emptyBytes = Uint8List(0);
+
+/// Throws [MalformedFrameException] if [data] cannot hold the fixed [headerLen]
+/// result/length header region.
+void _requireHeader(Uint8List data, int headerLen, String what) {
+  if (data.length < headerLen) {
+    throw MalformedFrameException(
+      '$what requires a $headerLen-byte header region, got ${data.length}',
+      length: headerLen,
+    );
+  }
+}
+
+/// Throws [MalformedFrameException] if the block `[cursor, cursor + len)` would
+/// over-run [data] — checked (subtraction-safe) BEFORE any slice (T-6-01).
+void _requireBlock(
+  Uint8List data,
+  int cursor,
+  int len,
+  String what,
+  int item,
+) {
+  if (len > data.length - cursor) {
+    throw MalformedFrameException(
+      '$what item $item declares $len data bytes but only '
+      '${data.length - cursor} remain',
+      length: len,
+      offset: cursor,
+    );
+  }
 }
