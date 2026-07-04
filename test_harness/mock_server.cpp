@@ -112,7 +112,10 @@ static const uint32_t kErrAmsGroup = 0xE7700001u;
 // single hostile 6-byte wrapper declaring a multi-GiB length must not make
 // the server buffer everything the peer sends. The cap also keeps
 // `sizeof(AmsTcpHeader) + length` well inside size_t on 32-bit builds, where
-// 6 + 0xFFFFFFFF would otherwise wrap and cause a heap overread.
+// 6 + 0xFFFFFFFF would otherwise wrap and cause a heap overread. NOTE: the
+// cap only covers the AMS/TCP `length` field — the per-command payload
+// length fields (WRITE `length`, READ_WRITE `writeLength`) are validated in
+// overflow-free subtraction form at their dispatch sites instead.
 static const uint32_t kMaxFrameBytes = 4 * 1024 * 1024;
 
 // ---- Little-endian scalar helpers for the response ADS payload -------------
@@ -553,10 +556,14 @@ static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN,
                     case AoEHeader::WRITE: {
                         // Write (0x03): group u32, offset u32, length u32, data.
                         uint32_t group, offset, length;
+                        // Subtraction form: `12 + length > bodyLen` would wrap
+                        // on 32-bit size_t for a hostile length near 2^32 and
+                        // bypass the rejection (heap overread).
                         if (!getU32(body, bodyLen, 0, group) ||
                             !getU32(body, bodyLen, 4, offset) ||
                             !getU32(body, bodyLen, 8, length) ||
-                            12u + static_cast<size_t>(length) > bodyLen) {
+                            bodyLen < 12 ||
+                            static_cast<size_t>(length) > bodyLen - 12) {
                             break; // malformed/short: data not fully present
                         }
                         store[{ group, offset }] =
@@ -573,12 +580,15 @@ static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN,
                         // ReadWrite (0x09): group u32, offset u32, readLength u32,
                         // writeLength u32, writeData[writeLength].
                         uint32_t group, offset, readLength, writeLength;
+                        // Subtraction form for writeLength (see WRITE above):
+                        // the additive check wraps on 32-bit size_t.
                         if (!getU32(body, bodyLen, 0, group) ||
                             !getU32(body, bodyLen, 4, offset) ||
                             !getU32(body, bodyLen, 8, readLength) ||
                             !getU32(body, bodyLen, 12, writeLength) ||
                             readLength > kMaxFrameBytes ||
-                            16u + static_cast<size_t>(writeLength) > bodyLen) {
+                            bodyLen < 16 ||
+                            static_cast<size_t>(writeLength) > bodyLen - 16) {
                             break; // malformed/hostile
                         }
                         // Write-then-read the SAME key.
