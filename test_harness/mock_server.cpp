@@ -144,6 +144,57 @@ static const uint32_t kNotifyCountGroup = 0xE7700002u;
 static const uint32_t kNotifyBurst2x2Group = 0xE7700003u;
 static const uint32_t kNotifyHostileGroup = 0xE7700004u;
 
+// ---- Magic symbol-handle-count fixture (Phase 7) ---------------------------
+// A sibling of kNotifyCountGroup for SYMBOL handles: a Read returns the current
+// number of live symbol handles (0xF003-allocated, not yet 0xF006-released) as a
+// u32 — the in-band handle-leak proof for the symbol lifecycle (baseline 0 →
+// N resolves → 0 after N releases). 0xE7700003/4 are taken by the notify groups,
+// so this uses the next free sentinel, 0xE7700005.
+static const uint32_t kSymHandleCountGroup = 0xE7700005u;
+
+// ---- Symbol index groups (Phase 7, SYM-01/02) ------------------------------
+// The five ADS symbol index groups this mock serves (values from vendored
+// third_party/ADS/AdsLib/standalone/AdsDef.h ADSIGRP_SYM_*):
+//   0xF003 SYM_HNDBYNAME   (ReadWrite): name -> fresh per-connection u32 handle
+//   0xF005 SYM_VALBYHND    (Read/Write): indexOffset=handle -> value store
+//   0xF006 SYM_RELEASEHND  (Write): iOffs=0, data=4-byte handle -> release
+//   0xF00B SYM_UPLOAD      (Read): the byte-exact AdsSymbolEntry blob
+//   0xF00C SYM_UPLOADINFO  (Read): {nSymbols u32, nSymSize u32}
+static const uint32_t kSymHndByNameGroup = 0xF003u;
+static const uint32_t kSymValByHndGroup = 0xF005u;
+static const uint32_t kSymReleaseHndGroup = 0xF006u;
+static const uint32_t kSymUploadGroup = 0xF00Bu;
+static const uint32_t kSymUploadInfoGroup = 0xF00Cu;
+
+// ADSERR_DEVICE_SYMBOLNOTFOUND (0x710): returned for BOTH an unknown symbol name
+// on 0xF003 and an invalid/released handle on 0xF005 (A4 frozen in 07-RESEARCH:
+// mock uses one code for both; the Dart AdsHandle invalidates on 0x710/0x711).
+static const uint32_t kAdsErrSymbolNotFound = 0x710u;
+
+// ---- Fixed compile-time symbol table (Phase 7) -----------------------------
+// Mirrors the notification handle-table pattern: a small fixed set the Dart
+// client + integration tests exercise. Each symbol is backed by the per-
+// connection value `store` at its {iGroup, iOffs}. dataTypeId values are the
+// canonical ADST_* IDs (07-RESEARCH codec table): INT32=3, BIT=33, STRING=30,
+// REAL64=5. All four live in indexGroup 0x4020 at distinct offsets.
+struct MockSymbol {
+    const char* name;
+    uint32_t iGroup;
+    uint32_t iOffs;
+    uint32_t size;
+    uint32_t dataTypeId;
+    const char* typeName;
+    const char* comment;
+};
+
+static const MockSymbol kSymbolTable[] = {
+    { "MAIN.counter", 0x4020u, 0x00u, 4u, 3u, "DINT", "cycle counter" },
+    { "MAIN.flag", 0x4020u, 0x04u, 1u, 33u, "BOOL", "" },
+    { "MAIN.text", 0x4020u, 0x08u, 81u, 30u, "STRING(80)", "" },
+    { "MAIN.temp", 0x4020u, 0x60u, 8u, 5u, "LREAL", "temperature" },
+};
+static const size_t kSymbolCount = sizeof(kSymbolTable) / sizeof(kSymbolTable[0]);
+
 // Inbound max-frame guard, mirroring the Dart FrameAssembler's 4 MiB cap: a
 // single hostile 6-byte wrapper declaring a multi-GiB length must not make
 // the server buffer everything the peer sends. The cap also keeps
@@ -608,11 +659,24 @@ static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN,
         // across tests. nextHandle starts at 1 and increments per successful ADD.
         std::map<uint32_t, std::array<uint32_t, 4>> notes;
         uint32_t nextHandle = 1;
+        // Per-connection symbol handle table (0xF003 resolve -> 0xF006 release),
+        // mirroring `notes`: handle -> {iGroup, iOffs}. Declared here so each
+        // accepted connection — i.e. each integration test — starts CLEAN and
+        // handle numbers never leak across tests. nextSymHandle starts at 1.
+        std::map<uint32_t, std::pair<uint32_t, uint32_t>> symHandles;
+        uint32_t nextSymHandle = 1;
         uint16_t curAdsState = static_cast<uint16_t>(ADSSTATE_RUN); // 5 — seed to RUN
         uint16_t curDeviceState = 0;
         // Seed one fixture matching the read_req golden key so a pure Read (with no
         // prior Write) returns meaningful bytes.
         store[{ 0xF005u, 0x123u }] = { 0x2A, 0x00, 0x00, 0x00 };
+        // Seed the value store at each symbol's {iGroup, iOffs} so a read-by-handle
+        // with no prior write returns a well-defined zero-filled buffer of the
+        // symbol's declared size (MAIN.counter=4, flag=1, text=81, temp=8).
+        for (size_t si = 0; si < kSymbolCount; ++si) {
+            const MockSymbol& s = kSymbolTable[si];
+            store[{ s.iGroup, s.iOffs }] = std::vector<uint8_t>(s.size, 0);
+        }
         uint8_t chunk[4096];
         bool dropConnection = false;
         // Connection-scoped --delay-ms state: hold response #1, flush it last.
@@ -733,6 +797,56 @@ static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN,
                             haveRes = true;
                             break;
                         }
+                        // Magic sym-handle-count group: return the number of live
+                        // symbol handles as u32 — the leak proof for the symbol
+                        // lifecycle (baseline 0 -> N resolves -> 0 after releases).
+                        if (group == kSymHandleCountGroup) {
+                            std::vector<uint8_t> p;
+                            putU32(p, 0); // result = 0
+                            putU32(p, 4); // readLength = 4
+                            putU32(p, static_cast<uint32_t>(symHandles.size()));
+                            Frame f(p.size(), p.data());
+                            res = wrapResponse(f, AoEHeader::READ, rTarget,
+                                               rTargetPort, rSource, rSourcePort,
+                                               rInvoke);
+                            haveRes = true;
+                            break;
+                        }
+                        // 0xF005 SYM_VALBYHND read: indexOffset = handle. Resolve
+                        // handle -> {group,offset}; unknown/released -> 0x710 (never
+                        // fall through to an arbitrary store entry, threat T-7-04).
+                        if (group == kSymValByHndGroup) {
+                            const auto hit = symHandles.find(offset);
+                            if (hit == symHandles.end()) {
+                                std::vector<uint8_t> p;
+                                putU32(p, kAdsErrSymbolNotFound); // 0x710
+                                putU32(p, 0);                     // readLength = 0
+                                Frame f(p.size(), p.data());
+                                res = wrapResponse(f, AoEHeader::READ, rTarget,
+                                                   rTargetPort, rSource,
+                                                   rSourcePort, rInvoke);
+                                haveRes = true;
+                                break;
+                            }
+                            std::vector<uint8_t> data(length, 0);
+                            const auto it = store.find(hit->second);
+                            if (it != store.end()) {
+                                const size_t n = std::min(
+                                    static_cast<size_t>(length), it->second.size());
+                                std::copy(it->second.begin(),
+                                          it->second.begin() + n, data.begin());
+                            }
+                            std::vector<uint8_t> p;
+                            putU32(p, 0);      // result = 0
+                            putU32(p, length); // readLength
+                            p.insert(p.end(), data.begin(), data.end());
+                            Frame f(p.size(), p.data());
+                            res = wrapResponse(f, AoEHeader::READ, rTarget,
+                                               rTargetPort, rSource, rSourcePort,
+                                               rInvoke);
+                            haveRes = true;
+                            break;
+                        }
                         std::vector<uint8_t> data(length, 0);
                         const auto it = store.find({ group, offset });
                         if (it != store.end()) {
@@ -803,6 +917,45 @@ static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN,
                             haveRes = true;
                             break;
                         }
+                        // 0xF005 SYM_VALBYHND write: indexOffset = handle. Resolve
+                        // handle -> {group,offset}; unknown/released -> 0x710 (never
+                        // write through to an arbitrary store entry, threat T-7-04).
+                        if (group == kSymValByHndGroup) {
+                            const auto hit = symHandles.find(offset);
+                            uint32_t result = kAdsErrSymbolNotFound; // 0x710
+                            if (hit != symHandles.end()) {
+                                store[hit->second] = std::vector<uint8_t>(
+                                    body + 12, body + 12 + length);
+                                result = 0;
+                            }
+                            std::vector<uint8_t> p;
+                            putU32(p, result);
+                            Frame f(p.size(), p.data());
+                            res = wrapResponse(f, AoEHeader::WRITE, rTarget,
+                                               rTargetPort, rSource, rSourcePort,
+                                               rInvoke);
+                            haveRes = true;
+                            break;
+                        }
+                        // 0xF006 SYM_RELEASEHND write: iOffs=0, data=4-byte handle
+                        // (LE). Erase from symHandles; releasing an unknown handle
+                        // is an idempotent no-op success (matches ADS release
+                        // semantics — the handle ends up not-live either way).
+                        if (group == kSymReleaseHndGroup) {
+                            uint32_t handleToRelease;
+                            if (length >= 4 &&
+                                getU32(body, bodyLen, 12, handleToRelease)) {
+                                symHandles.erase(handleToRelease);
+                            }
+                            std::vector<uint8_t> p;
+                            putU32(p, 0); // result = 0 (idempotent success)
+                            Frame f(p.size(), p.data());
+                            res = wrapResponse(f, AoEHeader::WRITE, rTarget,
+                                               rTargetPort, rSource, rSourcePort,
+                                               rInvoke);
+                            haveRes = true;
+                            break;
+                        }
                         store[{ group, offset }] =
                             std::vector<uint8_t>(body + 12, body + 12 + length);
                         // Write-triggered serverOnChange: emit ONE 1-stamp x
@@ -848,6 +1001,50 @@ static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN,
                             bodyLen < 16 ||
                             static_cast<size_t>(writeLength) > bodyLen - 16) {
                             break; // malformed/hostile
+                        }
+                        // 0xF003 SYM_HNDBYNAME resolve: writeData = symbol name,
+                        // readLength = 4 (u32 handle LE). Strip ONE trailing NUL if
+                        // present (A1: client sends name+NUL per CONTEXT, vendored
+                        // AdsLib sends no NUL — tolerate both). Miss -> 0x710; hit ->
+                        // allocate a fresh per-connection handle bound to the
+                        // symbol's {iGroup, iOffs}.
+                        if (group == kSymHndByNameGroup) {
+                            size_t nameLen = writeLength;
+                            if (nameLen > 0 && body[16 + nameLen - 1] == 0) {
+                                --nameLen; // strip one trailing NUL
+                            }
+                            const std::string name(
+                                reinterpret_cast<const char*>(body + 16), nameLen);
+                            const MockSymbol* match = nullptr;
+                            for (size_t si = 0; si < kSymbolCount; ++si) {
+                                if (name == kSymbolTable[si].name) {
+                                    match = &kSymbolTable[si];
+                                    break;
+                                }
+                            }
+                            if (match == nullptr) {
+                                std::vector<uint8_t> p;
+                                putU32(p, kAdsErrSymbolNotFound); // 0x710
+                                putU32(p, 0);                     // readLength = 0
+                                Frame f(p.size(), p.data());
+                                res = wrapResponse(f, AoEHeader::READ_WRITE, rTarget,
+                                                   rTargetPort, rSource,
+                                                   rSourcePort, rInvoke);
+                                haveRes = true;
+                                break;
+                            }
+                            const uint32_t handle = nextSymHandle++;
+                            symHandles[handle] = { match->iGroup, match->iOffs };
+                            std::vector<uint8_t> p;
+                            putU32(p, 0); // result = 0
+                            putU32(p, 4); // readLength = 4
+                            putU32(p, handle); // 4-byte LE handle
+                            Frame f(p.size(), p.data());
+                            res = wrapResponse(f, AoEHeader::READ_WRITE, rTarget,
+                                               rTargetPort, rSource, rSourcePort,
+                                               rInvoke);
+                            haveRes = true;
+                            break;
                         }
                         // --- SUMUP sub-handler (0xF080 / 0xF081 / 0xF082) ----
                         // Batched Read / Write / ReadWrite. The outer
