@@ -112,7 +112,7 @@ void main() {
         target: _target,
         source: _source,
         invokeId: _invokeId,
-        adsState: AdsState.run, // 5
+        adsState: AdsState.run.code, // 5
         deviceState: 0,
       );
       expect(frame, equals(readGolden('test/golden/write_control_req.hex')));
@@ -173,7 +173,7 @@ void main() {
       );
       final res = decodeReadStateResponse(payload);
       expect(res.result, equals(0));
-      expect(res.adsState, equals(AdsState.run)); // 5
+      expect(res.adsState, equals(AdsState.run.code)); // 5
       expect(res.deviceState, equals(0));
     });
 

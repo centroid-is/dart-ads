@@ -74,7 +74,8 @@ export 'src/connection/exceptions.dart'
 export 'src/connection/ams_connection.dart' show AmsConnection;
 
 /// Wire-protocol constants (command IDs, state flags, ports, index groups,
-/// device-data offsets, run states, error codes).
+/// device-data offsets, run states). The ADS error family lives in
+/// [AdsException] / [adsErrorName] / [adsErrorText] below, not here.
 export 'src/protocol/constants.dart'
     show
         AdsCommandId,
@@ -82,5 +83,11 @@ export 'src/protocol/constants.dart'
         AmsPort,
         AdsIndexGroup,
         AdsDeviceDataOffset,
-        AdsState,
-        AdsError;
+        AdsState;
+
+/// The ADS error family: the full `AdsDef.h` error table exposed via
+/// [adsErrorName] / [adsErrorText], and the typed [AdsException] (with
+/// `isDeviceError` / `isClientError` range helpers) — a distinct family from
+/// [MalformedFrameException], [AdsTimeoutException], and [AdsConnectionException].
+export 'src/protocol/ads_error.dart'
+    show AdsException, adsErrorName, adsErrorText;
