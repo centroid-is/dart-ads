@@ -19,7 +19,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 5: Device Notifications as Streams** - Subscribe/cancel as Dart Streams with nested stamp/sample demux and handle lifecycle (completed 2026-07-04)
 - [x] **Phase 6: Sum (Batched) Commands** - Batched read/write/readwrite with per-item partial-failure results (completed 2026-07-04)
 - [x] **Phase 7: Symbol Access, Browse & Typed Values** - Handle-by-name, symbol table browse, and scalar type conversion (completed 2026-07-04)
-- [ ] **Phase 8: Dart CLI** - browse/read/write/subscribe/pull/push/action operator tool over the full library
+- [x] **Phase 8: Dart CLI** - browse/read/write/subscribe/pull/push/action operator tool over the full library (completed 2026-07-04)
 - [ ] **Phase 9: Packaging & Publishing** - Native-only platform declaration, .pubignore, and pub.dev publish readiness
 
 ## Phase Details
@@ -162,11 +162,11 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 7 plans in 2 waves
   - [x] 08-01-PLAN.md — CLI backbone: args CommandRunner, global flags, connection bootstrap, exit-code + ADS-error contract, seven command stubs (wave 1)
   - [x] 08-02-PLAN.md — Pure value/hex parsing seam (TDD, hostile-input hardened) (wave 1)
-  - [ ] 08-03-PLAN.md — browse + read verbs (table/filter/json, typed/raw, unknown-symbol->1) (wave 2)
-  - [ ] 08-04-PLAN.md — write verb (by-name typed / group-offset / --raw) (wave 2)
-  - [ ] 08-05-PLAN.md — subscribe verb: timestamped stream + clean SIGINT handle teardown (wave 2)
-  - [ ] 08-06-PLAN.md — pull + push: sum-read snapshot / sum-write apply, --dry-run, lossless round-trip (wave 2)
-  - [ ] 08-07-PLAN.md — action verb: --state via WriteControl, old -> new (wave 2)
+  - [x] 08-03-PLAN.md — browse + read verbs (table/filter/json, typed/raw, unknown-symbol->1) (wave 2)
+  - [x] 08-04-PLAN.md — write verb (by-name typed / group-offset / --raw) (wave 2)
+  - [x] 08-05-PLAN.md — subscribe verb: timestamped stream + clean SIGINT handle teardown (wave 2)
+  - [x] 08-06-PLAN.md — pull + push: sum-read snapshot / sum-write apply, --dry-run, lossless round-trip (wave 2)
+  - [x] 08-07-PLAN.md — action verb: --state via WriteControl, old -> new (wave 2)
 **UI hint**: no
 
 ### Phase 9: Packaging & Publishing
@@ -196,5 +196,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 5. Device Notifications as Streams | 6/6 | Complete   | 2026-07-04 |
 | 6. Sum (Batched) Commands | 6/6 | Complete   | 2026-07-04 |
 | 7. Symbol Access, Browse & Typed Values | 6/6 | Complete   | 2026-07-04 |
-| 8. Dart CLI | 2/7 | In Progress|  |
+| 8. Dart CLI | 7/7 | Complete   | 2026-07-04 |
 | 9. Packaging & Publishing | 0/TBD | Not started | - |
