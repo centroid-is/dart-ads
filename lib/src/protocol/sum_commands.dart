@@ -365,7 +365,7 @@ void _requireBlock(
   String what,
   int item,
 ) {
-  if (len > data.length - cursor) {
+  if (len < 0 || len > data.length - cursor) {
     throw MalformedFrameException(
       '$what item $item declares $len data bytes but only '
       '${data.length - cursor} remain',

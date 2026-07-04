@@ -144,17 +144,20 @@ class AdsClient {
     Duration? timeout,
   }) async {
     if (items.isEmpty) return <SumResult<Uint8List>>[];
-    final (inner, readLength) = buildSumReadPayload(items);
+    // Snapshot: the caller's list must not be re-read after the await —
+    // mid-flight mutation would silently mis-slice the response (WR-01).
+    final snapshot = List<SumReadRequest>.unmodifiable(items);
+    final (inner, readLength) = buildSumReadPayload(snapshot);
     final payload = buildReadWritePayload(
       indexGroup: AdsIndexGroup.sumUpRead,
-      indexOffset: items.length,
+      indexOffset: snapshot.length,
       readLength: readLength,
       writeData: inner,
     );
     final response = await _command(AdsCommandId.readWrite, payload, timeout);
     final decoded = decodeReadWriteResponse(response);
     _throwOnResult(decoded.result);
-    return decodeSumReadResponse(decoded.data, items);
+    return decodeSumReadResponse(decoded.data, snapshot);
   }
 
   /// Issues a SUMUP_WRITE (0xF081) batch — writes every item in [items] in a
@@ -169,17 +172,18 @@ class AdsClient {
     Duration? timeout,
   }) async {
     if (items.isEmpty) return <SumResult<void>>[];
-    final (inner, readLength) = buildSumWritePayload(items);
+    final snapshot = List<SumWriteRequest>.unmodifiable(items);
+    final (inner, readLength) = buildSumWritePayload(snapshot);
     final payload = buildReadWritePayload(
       indexGroup: AdsIndexGroup.sumUpWrite,
-      indexOffset: items.length,
+      indexOffset: snapshot.length,
       readLength: readLength,
       writeData: inner,
     );
     final response = await _command(AdsCommandId.readWrite, payload, timeout);
     final decoded = decodeReadWriteResponse(response);
     _throwOnResult(decoded.result);
-    return decodeSumWriteResponse(decoded.data, items.length);
+    return decodeSumWriteResponse(decoded.data, snapshot.length);
   }
 
   /// Issues a SUMUP_READWRITE (0xF082) batch — writes-then-reads every item in
@@ -194,17 +198,18 @@ class AdsClient {
     Duration? timeout,
   }) async {
     if (items.isEmpty) return <SumResult<Uint8List>>[];
-    final (inner, readLength) = buildSumReadWritePayload(items);
+    final snapshot = List<SumReadWriteRequest>.unmodifiable(items);
+    final (inner, readLength) = buildSumReadWritePayload(snapshot);
     final payload = buildReadWritePayload(
       indexGroup: AdsIndexGroup.sumUpReadWrite,
-      indexOffset: items.length,
+      indexOffset: snapshot.length,
       readLength: readLength,
       writeData: inner,
     );
     final response = await _command(AdsCommandId.readWrite, payload, timeout);
     final decoded = decodeReadWriteResponse(response);
     _throwOnResult(decoded.result);
-    return decodeSumReadWriteResponse(decoded.data, items.length);
+    return decodeSumReadWriteResponse(decoded.data, snapshot.length);
   }
 
   /// Reads the device's ADS/device run state.
