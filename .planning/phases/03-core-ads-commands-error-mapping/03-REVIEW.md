@@ -1,6 +1,7 @@
 ---
 phase: 03-core-ads-commands-error-mapping
 reviewed: 2026-07-04T10:58:27Z
+reverified: 2026-07-04T11:10:32Z
 depth: standard
 files_reviewed: 12
 files_reviewed_list:
@@ -27,15 +28,46 @@ open:
   warning: 0
   info: 6
 fixed_at: 2026-07-04
-status: warnings_resolved
+status: clean
 ---
 
 # Phase 3: Code Review Report
 
 **Reviewed:** 2026-07-04T10:58:27Z
-**Depth:** standard
+**Re-verified:** 2026-07-04T11:10:32Z (iteration 2, focused re-review of commits 10504a8 / 60ccfac / 26dfb01)
+**Depth:** standard (re-review: quick/focused)
 **Files Reviewed:** 12 (6 in-scope source files plus 6 required-reading context files)
-**Status:** issues_found
+**Status:** clean (all 3 warnings verified fixed; 6 Info items remain open by design)
+
+## Re-Review Verification (iteration 2)
+
+Focused adversarial re-review of the three fix commits. All three warnings are verified resolved; no new issues were introduced.
+
+**WR-01 verified fixed (10504a8).** The WRITE check (mock_server.cpp:562-567) is now `... || bodyLen < 12 || static_cast<size_t>(length) > bodyLen - 12` and READ_WRITE (mock_server.cpp:585-591) is `... || readLength > kMaxFrameBytes || bodyLen < 16 || static_cast<size_t>(writeLength) > bodyLen - 16`. Overflow analysis for all u32 length values:
+- The `||` short-circuit guarantees `bodyLen >= 12` (resp. `>= 16`) before the subtraction, so `bodyLen - 12/16` cannot wrap for any input.
+- Both operands are `size_t`; no signed/unsigned promotion hazard on any width where `size_t` >= 32 bits.
+- When the check passes, `body + 12 + length <= body + bodyLen` (resp. `+ 16 + writeLength`), and `body + bodyLen` is inside `inbuf` because `inbuf.size() >= frameLen` was established before dispatch — the vector copies at lines 569-570 and 595-596 are in-bounds for every accepted request.
+- All remaining length arithmetic in these handlers was re-audited: `sizeof(AmsTcpHeader) + tcp.length()` (line 463) is guarded by the `kMaxFrameBytes` cap at line 457; `tcp.length() - sizeof(AoEHeader)` (line 491) is guarded by `tcp.length() >= sizeof(AoEHeader)` at line 478; READ's and READ_WRITE's `readLength` allocations are capped at `kMaxFrameBytes`; `getU16`/`getU32` offsets are small compile-time constants, so `off + 2/4` cannot wrap. No wrapping path remains.
+- The `kMaxFrameBytes` comment (lines 111-118) now states exactly what the cap does and does not cover — the previous false 32-bit-safety claim is gone.
+- The mock was rebuilt from the current source during this re-review (the checked-in build was stale) — it compiles clean and `--selftest` prints OK, so the golden remains byte-identical.
+
+**WR-02 verified fixed (60ccfac).** `testAdsReadReqEx2` (ads_parity_test.dart:105-179) now genuinely fails if Write is broken:
+1. It first documents the mock's zero-fill default on a key this test never writes, `(0x4020, 0xBEEF)` (lines 117-127) — the store is connection-scoped and each group takes a fresh mock, so no other test can pollute that key.
+2. The sentinel round-trip (lines 130-146) writes `[0x5A, 0xA5, 0x5A, 0xA5]` to `(0x4020, 0)` and asserts the exact pattern reads back. Every Write failure mode is now discriminating: a dropped or mis-keyed write reads back the zero-fill `[0,0,0,0] != sentinel`; garbled data reads back wrong bytes; a truncated write (e.g. 2 bytes stored) reads back `[0x5A,0xA5,0,0] != sentinel`. All fail the `equals(sentinel)` assertion.
+3. Only then is zero written (lines 148-153), so the C++-mirroring zero loop now proves the OVERWRITE — if that second write were dropped, the loop would read the sentinel and fail.
+
+**WR-03 verified fixed (26dfb01).** Single source of truth confirmed by exhaustive grep:
+- `commands.dart` defines the four builders (`buildReadPayload` :157, `buildWritePayload` :172, `buildWriteControlPayload` :189, `buildReadWritePayload` :206); their layouts match the reference (Read 12 B; Write 12+n with `length = data.length`; WriteControl adsState u16@0 / deviceState u16@2 / length u32@4 / data@8; ReadWrite readLength@8 / writeLength@12 / data@16), all range-checked via `checkUint`.
+- All four full-frame encoders consume them (commands.dart:259, 280, 316, 339) and all four `AdsClient` sites consume them (ads_client.dart:74, 93, 114, 151). `readState`/`readDeviceInfo` correctly pass `Uint8List(0)` (those commands carry no payload — nothing to build).
+- No duplicated payload layout remains in ads_client.dart: zero `ByteData`/`setUint32`/offset-literal payload construction in the file.
+- Protocol purity intact: nothing under `lib/src/protocol/` imports `dart:async` or `dart:io` (grep matched only doc comments); `commands.dart` imports `dart:typed_data` plus local pure protocol files only.
+- Builders NOT exported: the barrel's `show` list for `src/protocol/commands.dart` (dart_ads.dart:27-50) contains the response types, encoders, and decoders only — no `build*Payload` symbol.
+
+**No new issues from the three commits.** `dart analyze lib test` — no issues; mock rebuilds clean from current source and `--selftest` passes (golden byte-identical); full suite `dart test` — 113/113 pass, including the strengthened parity test against the freshly rebuilt mock. The six Info items below remain open and unchanged (none was regressed or made worse by the fixes).
+
+---
+
+## Original Review (iteration 1, 2026-07-04T10:58:27Z)
 
 ## Summary
 
@@ -52,7 +84,7 @@ No blockers found. Three warnings (a latent 32-bit overread in the mock's length
 
 ## Warnings
 
-### WR-01: WRITE / READ_WRITE bounds checks overflow on 32-bit `size_t`, contradicting the file's own safety claim
+### WR-01: WRITE / READ_WRITE bounds checks overflow on 32-bit `size_t`, contradicting the file's own safety claim — RESOLVED
 
 **File:** `test_harness/mock_server.cpp:559` and `test_harness/mock_server.cpp:581`
 **Issue:** The kMaxFrameBytes comment (lines 113-115) claims the cap "keeps `sizeof(AmsTcpHeader) + length` well inside size_t on 32-bit builds" — but that only covers `tcp.length()`. The per-command payload length fields are NOT capped before being used in an addition:
@@ -73,8 +105,9 @@ if (... || bodyLen < 16 || static_cast<size_t>(writeLength) > bodyLen - 16) { br
 (or add `length > kMaxFrameBytes` / `writeLength > kMaxFrameBytes` guards before the additions, matching READ).
 
 **Resolution:** fixed: 10504a8 — WRITE and READ_WRITE checks rewritten in overflow-free subtraction form (`bodyLen < 12/16 || length > bodyLen - 12/16`); the kMaxFrameBytes comment now states exactly what the cap does and does not cover. READ_WRITE's `readLength > kMaxFrameBytes` cap was already present (cap parity with READ confirmed). Mock rebuilt; `--selftest` golden byte-identical.
+**Verified (iteration 2):** subtraction form proven overflow-free for all u32 values (short-circuit guarantees the subtrahend); all remaining length arithmetic in both handlers re-audited — no wrapping path remains. See Re-Review Verification above.
 
-### WR-02: Parity port `testAdsReadReqEx2` write-then-read loop is vacuous — its assertions cannot fail even if Write is broken
+### WR-02: Parity port `testAdsReadReqEx2` write-then-read loop is vacuous — its assertions cannot fail even if Write is broken — RESOLVED
 
 **File:** `test/integration/ads_parity_test.dart:110-130` (root cause: `test_harness/mock_server.cpp:535-541`)
 **Issue:** The test writes `[0, 0, 0, 0]` to `(0x4020, 0)` and then asserts ten reads return zeros. But the mock's READ handler zero-fills for a missing key:
@@ -97,8 +130,9 @@ await client.write(indexGroup: group, indexOffset: offset, data: zero, ...);
 Alternatively, make the mock answer a READ of a missing key with `ADSERR_DEVICE_SRVNOTSUPP` instead of zero-fill (closer to real PLC behavior, and it would also make the invalid-group case injectable without the magic group).
 
 **Resolution:** fixed: 60ccfac — the test now (1) documents the mock's zero-fill default by reading a never-written key `(0x4020, 0xBEEF)` and asserting zeros, then (2) writes a `[0x5A, 0xA5, 0x5A, 0xA5]` sentinel and asserts the exact pattern reads back (store proven live), then (3) writes zeros so the existing loop verifies the OVERWRITE rather than the zero-fill default. The C++-mirroring zero write is kept.
+**Verified (iteration 2):** every Write failure mode (dropped, mis-keyed, garbled, truncated) now fails the sentinel assertion; a dropped zero-overwrite fails the loop. See Re-Review Verification above.
 
-### WR-03: ADS payload wire layout duplicated between `AdsClient` methods and the `commands.dart` encoders — two sources of truth that can drift
+### WR-03: ADS payload wire layout duplicated between `AdsClient` methods and the `commands.dart` encoders — two sources of truth that can drift — RESOLVED
 
 **File:** `lib/src/client/ads_client.dart:73-77, 92-97, 114-121, 154-159` (duplicating `lib/src/protocol/commands.dart:174-178, 197-202, 237-242, 263-270`)
 **Issue:** Each `AdsClient` method re-implements, byte for byte, the same payload construction that already exists in the Phase-1 request encoders (e.g. `AdsClient.read` lines 73-77 is literally identical to the body of `encodeReadRequest` lines 174-178, minus the frame wrap). The encoders build full frames so they cannot be reused directly, which is exactly why the offset/length knowledge now lives in two places: a future layout fix (or a new field) applied to one copy and not the other produces a silent wire divergence. The client copies are covered only indirectly (via the C++ mock round-trips), not by the golden byte fixtures that pin the encoder copies.
@@ -110,6 +144,7 @@ Uint8List buildReadPayload(int indexGroup, int indexOffset, int length) { ... }
 ```
 
 **Resolution:** fixed: 26dfb01 — option (a): `commands.dart` now defines `buildReadPayload` / `buildWritePayload` / `buildWriteControlPayload` / `buildReadWritePayload` (named-parameter style matching the encoders, package-internal, NOT re-exported by `dart_ads.dart`); the four full-frame encoders and the four `AdsClient` payload sites both consume them, so each layout lives in exactly one place and stays pinned by the golden fixtures. No public signature changes; wire bytes unchanged (113/113 tests green, goldens byte-identical).
+**Verified (iteration 2):** all 8 consumption sites confirmed by grep (4 encoders + 4 client sites); zero remaining layout bytes in ads_client.dart; protocol purity intact; builders absent from the barrel's `show` list. See Re-Review Verification above.
 
 ## Info
 
@@ -152,5 +187,6 @@ Uint8List buildReadPayload(int indexGroup, int indexOffset, int length) { ... }
 ---
 
 _Reviewed: 2026-07-04T10:58:27Z_
+_Re-verified: 2026-07-04T11:10:32Z (iteration 2)_
 _Reviewer: Claude (gsd-code-reviewer)_
-_Depth: standard_
+_Depth: standard (re-review: quick/focused)_
