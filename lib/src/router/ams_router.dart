@@ -306,6 +306,10 @@ class AmsRouter {
       _requireRoute(targetNetId); // throws missingRoute (0x0007)
     }
 
+    // Validate everything fallible BEFORE taking a port slot: a non-u16
+    // amsPort throws ArgumentError here, with nothing allocated yet.
+    final target = AmsAddr(targetNetId, amsPort);
+
     // Allocate the local AMS source port. The 0 sentinel means all 128 slots
     // are taken — translate it into a typed 0x0508 rather than looping (T-4-01).
     final sourcePort = openPort();
@@ -313,44 +317,59 @@ class AmsRouter {
       throw AdsException.fromCode(_routerErrNoMoreQueues);
     }
 
-    final transport = _transportFactory(host, endpointPort);
     final source = AmsAddr(_localAddr, sourcePort);
-    final target = AmsAddr(targetNetId, amsPort);
 
-    // Direct mode wraps the connection so a request timeout — the canonical
-    // symptom of a missing REVERSE route on the target — is rethrown as an
-    // actionable 0x0745 naming the source NetId (ERR-02). Local-router mode uses
-    // a plain connection so its timeouts/errors stay their own family.
-    final AmsConnection connection = direct
-        ? _DirectTimeoutConnection(
-            transport,
-            source: source,
-            target: target,
-            defaultTimeout: _defaultTimeout,
-            sourceNetId: source.netId,
-          )
-        : AmsConnection(
-            transport,
-            source: source,
-            target: target,
-            defaultTimeout: _defaultTimeout,
-          );
-
+    // EVERYTHING between the slot allocation and the successful return runs
+    // under one rollback guard: any throw — a user-injected factory, the dial
+    // itself, or the post-dial derivation — releases the slot and closes the
+    // connection (if one was built), so no failure path can leak a slot out
+    // of the fixed 128-port range or strand an open socket.
+    AmsConnection? connection;
     try {
-      await connection.connect(host, endpointPort);
-    } catch (_) {
-      // Release the just-allocated source port so a failed dial never leaks a
-      // slot out of the fixed 128-port range.
-      closePort(sourcePort);
-      rethrow;
-    }
+      final transport = _transportFactory(host, endpointPort);
 
-    // First-connection <ip>.1.1 derivation (C++ parity): once the socket is up,
-    // learn the local IPv4 and, if no explicit local address was set, derive the
-    // router's source NetId for SUBSEQUENT connects.
-    final localIp = transport.localAddress;
-    if (_localAddr == _emptyNetId && localIp != null) {
-      _localAddr = AmsNetId.fromIpv4(localIp);
+      // Direct mode wraps the connection so a request timeout — the canonical
+      // symptom of a missing REVERSE route on the target — is rethrown as an
+      // actionable 0x0745 naming the source NetId (ERR-02). Local-router mode
+      // uses a plain connection so its timeouts/errors stay their own family.
+      connection = direct
+          ? _DirectTimeoutConnection(
+              transport,
+              source: source,
+              target: target,
+              defaultTimeout: _defaultTimeout,
+              sourceNetId: source.netId,
+            )
+          : AmsConnection(
+              transport,
+              source: source,
+              target: target,
+              defaultTimeout: _defaultTimeout,
+            );
+
+      await connection.connect(host, endpointPort);
+
+      // First-connection <ip>.1.1 derivation (C++ parity): once the socket is
+      // up, learn the local IPv4 and, if no explicit local address was set,
+      // derive the router's source NetId for SUBSEQUENT connects. A local
+      // address that is not a dotted IPv4 (an IPv6 literal such as `::1` or
+      // `fe80::…%if` on a dual-stack host) simply cannot derive — skip it
+      // rather than poisoning a healthy connect with a framing exception.
+      final localIp = transport.localAddress;
+      if (_localAddr == _emptyNetId &&
+          localIp != null &&
+          _isDottedIpv4(localIp)) {
+        _localAddr = AmsNetId.fromIpv4(localIp);
+      }
+    } catch (_) {
+      closePort(sourcePort);
+      final failed = connection;
+      if (failed != null) {
+        // Fire-and-forget: close() is idempotent and tears the transport down
+        // even when the dial never completed.
+        unawaited(failed.close());
+      }
+      rethrow;
     }
 
     // Tie the source-port slot's lifetime to the connection's lifetime: when
@@ -361,14 +380,32 @@ class AmsRouter {
     // Also cache the live connection so getConnection/resolve serve THIS
     // dialed connection (one live entry per NetId; a newer connect replaces
     // the cache entry while the older connection stays owned until it closes).
-    _owned.add(connection);
-    _connections[targetNetId] = connection;
-    final live = connection;
+    final live = connection; // promoted non-null: the guard always rethrows
+    _owned.add(live);
+    _connections[targetNetId] = live;
     unawaited(
       live.done.whenComplete(() => _release(live, targetNetId, sourcePort)),
     );
 
-    return AdsClient(connection, target: target, source: source);
+    return AdsClient(live, target: target, source: source);
+  }
+
+  /// Whether [address] is a plain dotted-decimal IPv4 literal (exactly four
+  /// digit-only octets, each `0..255`). Anything else — IPv6 (`::1`,
+  /// `fe80::…%en0`), hostnames, empty strings — is NOT derivable into an
+  /// `<ip>.1.1` NetId and must be skipped, never fed to [AmsNetId.fromIpv4]
+  /// (whose `MalformedFrameException` would poison a healthy connect).
+  static bool _isDottedIpv4(String address) {
+    final parts = address.split('.');
+    if (parts.length != 4) return false;
+    for (final part in parts) {
+      if (part.isEmpty || part.length > 3) return false;
+      for (final unit in part.codeUnits) {
+        if (unit < 0x30 || unit > 0x39) return false; // digits only
+      }
+      if (int.parse(part) > 255) return false;
+    }
+    return true;
   }
 
   /// Post-teardown bookkeeping for one [connect]-created [connection]: frees

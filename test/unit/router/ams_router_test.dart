@@ -330,6 +330,58 @@ void main() {
       expect(router.openPort(), AmsRouter.portBase + 1);
     });
 
+    test('an IPv6 local address skips the auto-derive instead of throwing',
+        () async {
+      // Dual-stack reality: `LocalRouterTarget(host: 'localhost')` can land on
+      // `::1`, so the transport reports an IPv6 literal. That must not surface
+      // a framing exception from connect() (and must not leak slot/socket);
+      // the local address simply stays unset until it can be derived or set.
+      final router = fakeRouter(localIp: '::1');
+
+      final client = await router.connect(
+        netIdA,
+        AmsPort.plcTc3,
+        mode: const LocalRouterTarget(host: hostA),
+      );
+      expect(router.getLocalAddress(), AmsRouter.emptyLocalAddress);
+      await client.connection.close();
+
+      // The slot came back on close — nothing leaked on the skip path.
+      expect(router.openPort(), AmsRouter.portBase);
+    });
+
+    test('an invalid amsPort throws BEFORE a slot is taken', () async {
+      final router = fakeRouter()
+        ..setLocalAddress(AmsNetId(const [1, 2, 3, 4, 5, 6]));
+
+      await expectLater(
+        router.connect(
+          netIdA,
+          0x10000, // not a u16 — AmsAddr validation must fire pre-allocation
+          mode: const LocalRouterTarget(host: hostA),
+        ),
+        throwsArgumentError,
+      );
+      // Slot 0 was never consumed: 128 repeats cannot brick the router.
+      expect(router.openPort(), AmsRouter.portBase);
+    });
+
+    test('a throwing TransportFactory rolls the slot back', () async {
+      final router = AmsRouter(
+        transportFactory: (host, port) => throw StateError('factory exploded'),
+      )..setLocalAddress(AmsNetId(const [1, 2, 3, 4, 5, 6]));
+
+      await expectLater(
+        router.connect(
+          netIdA,
+          AmsPort.plcTc3,
+          mode: const LocalRouterTarget(host: hostA),
+        ),
+        throwsStateError,
+      );
+      expect(router.openPort(), AmsRouter.portBase);
+    });
+
     test('a newer connect() to the same NetId survives the older teardown',
         () async {
       final router = fakeRouter()
