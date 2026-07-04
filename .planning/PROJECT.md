@@ -32,7 +32,7 @@ A Dart application can reliably connect to a Beckhoff PLC and read, write, and s
 - [x] Read, Write, ReadWrite — Validated in Phase 3 (live vs mock + C++ parity ports)
 - [x] ReadState, WriteControl — Validated in Phase 3 (stateful WriteControl→ReadState proven)
 - [x] Device notifications as Dart Streams — Validated in Phase 5 (nested parser, handle lifecycle, C++ parity + stress tests)
-- [ ] Symbol access by name (handle-by-name resolution, symbol upload/browse)
+- [x] Symbol access by name + browse + typed values — Validated in Phase 7 (handle lifecycle w/ leak proof, entryLength-safe blob parser, full scalar codec)
 - [x] Sum (batched) commands (read/write/readwrite) — Validated in Phase 6 (per-item results, partial-failure alignment; batched notifications v2)
 - [x] Route / AmsRouter management (add/remove routes, setLocalAddress) — Validated in Phase 4
 
@@ -109,4 +109,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-04 after Phase 6 (Sum Batched Commands) completion*
+*Last updated: 2026-07-04 after Phase 7 (Symbol Access, Browse & Typed Values) completion*
