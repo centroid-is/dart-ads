@@ -28,8 +28,8 @@ created: 2026-07-04
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| (planner) | — | — | CLI-01..03 | — | browse/read/write against live mock via subprocess | integration | `dart test -t integration test/integration/cli_test.dart` | ❌ W0 | ⬜ pending |
-| (planner) | — | — | CLI-04 | T-8-01 | subscribe SIGTERM teardown, no handle leak (0xE7700005) | integration | subscribe test | ❌ W0 | ⬜ pending |
+| (planner) | — | — | CLI-01..03 | — | browse/read/write against live mock via subprocess | integration | `dart test -t integration test/integration/cli_contract_test.dart test/integration/cli_browse_read_test.dart test/integration/cli_write_test.dart` | ❌ W0 | ⬜ pending |
+| (planner) | — | — | CLI-04 | T-8-01 | subscribe SIGTERM teardown, no handle leak (0xE7700002 = kNotifyCountGroup; NOTE 0xE7700005 is the SYMBOL-handle count) | integration | subscribe test | ❌ W0 | ⬜ pending |
 | (planner) | — | — | CLI-05..06 | — | pull→push lossless round-trip; --dry-run; per-item report | integration | round-trip test | ❌ W0 | ⬜ pending |
 | (planner) | — | — | CLI-07 | — | action --state via WriteControl, old→new printed | integration | action test | ❌ W0 | ⬜ pending |
 | (planner) | — | — | CLI-08 | T-8-02 | exit codes 0/1/2/3 contract; human-readable errors; --json | integration | exit-code tests | ❌ W0 | ⬜ pending |
@@ -38,7 +38,7 @@ created: 2026-07-04
 
 - [ ] pubspec: args dep + executables entry
 - [ ] bin/ads.dart + lib/src/cli/ commands
-- [ ] test/integration/cli_test.dart subprocess harness (reuses startMockServer)
+- [ ] CLI subprocess tests: cli_contract_test.dart, cli_browse_read_test.dart, cli_write_test.dart, cli_subscribe_test.dart, cli_pull_push_test.dart, cli_action_test.dart (reuse startMockServer)
 
 ## Manual-Only Verifications
 

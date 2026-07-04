@@ -65,7 +65,7 @@ Requirements: CLI-01..CLI-08.
 ## Specific Ideas
 
 - pull→push round-trip must be lossless (FEATURES research contract)
-- subscribe must never orphan notification handles on SIGINT (leak-count assertion via 0xE7700005)
+- subscribe must never orphan notification handles on SIGINT (leak-count assertion via 0xE7700002 (kNotifyCountGroup; 0xE7700005 is the symbol-handle count))
 - The CLI is the end-to-end proof of the whole stack — its integration tests are the de-facto system test
 
 </specifics>
