@@ -323,4 +323,169 @@ void main() {
       await expectLater(delFut, completes);
     });
   });
+
+  /// Adds a subscription for [handle], acking it, and returns the buffer its
+  /// samples land in. The controller listens synchronously so dispatched
+  /// samples are observable after a [pump].
+  Future<List<AdsNotification>> subscribe(
+    AmsConnection conn,
+    FakeTransport fake,
+    int handle,
+  ) async {
+    final ctrl = StreamController<AdsNotification>();
+    final received = <AdsNotification>[];
+    ctrl.stream.listen(received.add);
+    final fut = conn.addNotification(anyAddPayload(), ctrl);
+    final id = outboundInvokeId(fake.written.last);
+    fake.feed(buildFrame(
+      invokeId: id,
+      commandId: AdsCommandId.addDeviceNotification,
+      payload: addResp(result: 0, handle: handle),
+    ));
+    await fut;
+    return received;
+  }
+
+  group('0x08 dispatch and containment', () {
+    test('a 2x2 frame routes all four samples to their handles', () async {
+      final fake = FakeTransport();
+      final conn = newConnection(fake);
+      await conn.connect('fake', 0);
+
+      final rx1 = await subscribe(conn, fake, 0x11);
+      final rx2 = await subscribe(conn, fake, 0x22);
+
+      final ts2 = DateTime.utc(2024, 1, 1, 12, 0, 1);
+      fake.feed(notifFrame(notifStream([
+        (
+          timestamp: ts,
+          samples: [
+            (handle: 0x11, data: Uint8List.fromList([1])),
+            (handle: 0x22, data: Uint8List.fromList([2])),
+          ],
+        ),
+        (
+          timestamp: ts2,
+          samples: [
+            (handle: 0x11, data: Uint8List.fromList([3])),
+            (handle: 0x22, data: Uint8List.fromList([4])),
+          ],
+        ),
+      ])));
+      await pump();
+
+      expect(rx1.map((n) => n.data.single), [1, 3]);
+      expect(rx2.map((n) => n.data.single), [2, 4]);
+      // Timestamps come from the enclosing stamp (shared by its samples).
+      expect(rx1.map((n) => n.timestamp), [ts, ts2]);
+      expect(conn.droppedNotifications, 0);
+    });
+
+    test('a sample for an unregistered handle is silently ignored', () async {
+      final fake = FakeTransport();
+      final conn = newConnection(fake);
+      await conn.connect('fake', 0);
+
+      final rx = await subscribe(conn, fake, 0x11);
+
+      fake.feed(notifFrame(notifStream([
+        (
+          timestamp: ts,
+          samples: [
+            (handle: 0x99, data: Uint8List.fromList([9])), // unknown
+            (handle: 0x11, data: Uint8List.fromList([1])), // known
+          ],
+        ),
+      ])));
+      await pump();
+
+      expect(rx.map((n) => n.data.single), [1],
+          reason: 'unknown handle dropped, known handle still delivered');
+      expect(conn.isConnected, isTrue);
+      expect(conn.droppedNotifications, 0,
+          reason: 'unknown handle is not a parse failure');
+    });
+
+    test(
+        'a hostile 0x08 frame is counted and dropped without killing the '
+        'connection; a following good frame is still delivered', () async {
+      final fake = FakeTransport();
+      final conn = newConnection(fake);
+      await conn.connect('fake', 0);
+
+      final rx = await subscribe(conn, fake, 0x11);
+
+      // Malformed stream: length field lies (claims 100 bytes of body but the
+      // payload is only 8), so parseNotificationStream throws. The 0x08 branch
+      // MUST contain that throw locally — never let it reach the connect()
+      // listener's MalformedFrameException catch, which would _failClose.
+      final hostile = Uint8List(8);
+      ByteData.sublistView(hostile).setUint32(0, 100, Endian.little);
+      fake.feed(notifFrame(hostile));
+      await pump();
+
+      expect(conn.droppedNotifications, 1);
+      expect(conn.isConnected, isTrue,
+          reason: 'one hostile frame cannot kill the connection (T-5-02)');
+      expect(rx, isEmpty);
+
+      // A following good frame for the still-live subscription is delivered.
+      fake.feed(notifFrame(notifStream([
+        (
+          timestamp: ts,
+          samples: [(handle: 0x11, data: Uint8List.fromList([7]))],
+        ),
+      ])));
+      await pump();
+
+      expect(rx.map((n) => n.data.single), [7]);
+      expect(conn.notificationFrames, 2,
+          reason: 'both 0x08 frames counted (hostile + good)');
+      expect(conn.droppedNotifications, 1);
+    });
+
+    test('disconnect error-closes every registered controller and clears the map',
+        () async {
+      final fake = FakeTransport();
+      final conn = newConnection(fake);
+      await conn.connect('fake', 0);
+
+      final errors = <Object>[];
+      final closed = <int>[];
+
+      Future<void> track(int handle) async {
+        final ctrl = StreamController<AdsNotification>();
+        ctrl.stream.listen(
+          (_) {},
+          onError: errors.add,
+          onDone: () => closed.add(handle),
+        );
+        final fut = conn.addNotification(anyAddPayload(), ctrl);
+        final id = outboundInvokeId(fake.written.last);
+        fake.feed(buildFrame(
+          invokeId: id,
+          commandId: AdsCommandId.addDeviceNotification,
+          payload: addResp(result: 0, handle: handle),
+        ));
+        await fut;
+      }
+
+      await track(0x11);
+      await track(0x22);
+
+      fake.simulateDisconnect(StateError('peer reset'));
+      await conn.done;
+      await pump();
+
+      expect(conn.isConnected, isFalse);
+      expect(errors, hasLength(2),
+          reason: 'each controller received the fan-out error');
+      expect(errors.every((e) => e is AdsConnectionException), isTrue);
+      expect(closed..sort(), [0x11, 0x22],
+          reason: 'each controller was closed');
+
+      // The map is cleared: a post-disconnect 0x08 (were one to arrive) has no
+      // controllers to reach — proven indirectly by the connection being dead.
+    });
+  });
 }
