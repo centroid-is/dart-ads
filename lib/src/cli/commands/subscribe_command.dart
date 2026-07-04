@@ -54,7 +54,8 @@ class SubscribeCommand extends BaseAdsCommand {
       )
       ..addFlag(
         'on-change',
-        help: 'Notify only when the value changes (default).',
+        help: 'Notify only when the value changes (default). '
+            'Use --no-on-change together with --cycle for cyclic mode.',
         defaultsTo: true,
       )
       ..addOption(
@@ -109,7 +110,22 @@ class SubscribeCommand extends BaseAdsCommand {
         // applies to both.
         final AdsTransmissionMode mode;
         var cycleTime = Duration.zero;
-        if (cycleOpt != null && cycleOpt.isNotEmpty) {
+        final hasCycle = cycleOpt != null && cycleOpt.isNotEmpty;
+        final onChangeExplicit = r.wasParsed('on-change');
+        final onChange = r['on-change'] as bool;
+        if (hasCycle && onChangeExplicit && onChange) {
+          throw UsageException(
+            '--cycle and --on-change are contradictory: pick one mode',
+            '',
+          );
+        }
+        if (!onChange && !hasCycle) {
+          throw UsageException(
+            '--no-on-change requires --cycle <ms> (cyclic mode)',
+            '',
+          );
+        }
+        if (hasCycle) {
           mode = AdsTransmissionMode.serverCycle;
           cycleTime = Duration(milliseconds: _parseAnyInt(cycleOpt, 'cycle'));
         } else {
@@ -125,20 +141,30 @@ class SubscribeCommand extends BaseAdsCommand {
         // error). It cancels the subscription (-> DeleteDeviceNotification),
         // closes the session (idempotent; invalidates handles at the router),
         // and detaches the signal watchers so the isolate can exit.
-        var tornDown = false;
         StreamSubscription<AdsNotification>? sub;
         var signals = <StreamSubscription<ProcessSignal>>[];
         final done = Completer<int>();
 
-        Future<void> teardown() async {
-          if (tornDown) return;
-          tornDown = true;
+        // Single-flight: every caller awaits the SAME future, so the finally
+        // genuinely waits for an in-flight teardown started by a signal
+        // handler, and internal errors never become unhandled async errors
+        // (WR-01).
+        Future<void>? teardownFuture;
+
+        Future<void> doTeardown() async {
           for (final s in signals) {
-            await s.cancel();
+            try {
+              await s.cancel();
+            } catch (_) {/* teardown never throws */}
           }
           final hadSubscription = sub != null;
-          await sub?.cancel(); // fires DeleteDeviceNotification (Always-Delete)
-          await session.close(); // idempotent
+          try {
+            // fires DeleteDeviceNotification (Always-Delete)
+            await sub?.cancel();
+          } catch (_) {/* teardown never throws */}
+          try {
+            await session.close(); // idempotent
+          } catch (_) {/* teardown never throws */}
           if (hadSubscription) {
             // Observable teardown marker: proves the handle-release path ran on
             // this exit (the CONTEXT's headline no-leak property). The mock's
@@ -152,6 +178,8 @@ class SubscribeCommand extends BaseAdsCommand {
           }
           if (!done.isCompleted) done.complete(exitOk);
         }
+
+        Future<void> teardown() => teardownFuture ??= doTeardown();
 
         try {
           // Resolve the target region: by-name via the symbol table, or the
@@ -234,11 +262,16 @@ class SubscribeCommand extends BaseAdsCommand {
 Future<AdsSymbolInfo> _resolveOrRaise(AdsClient client, String name) async {
   final symbols = await client.browseSymbols();
   for (final s in symbols) {
-    if (s.name == name) return s;
+    if (s.name.toLowerCase() == name.toLowerCase()) return s;
   }
   // Not in the table: let the device raise its ADS error for the unknown name.
-  await client.getHandleByName(name);
-  // getHandleByName should have thrown; guard against a surprise success.
+  final surprise = await client.getHandleByName(name);
+  // getHandleByName should have thrown; guard against a surprise success
+  // (e.g. device-side case-insensitive match) — release the handle so it
+  // cannot leak (WR-06).
+  try {
+    await client.releaseHandle(surprise);
+  } catch (_) {/* best-effort release */}
   throw FormatException('symbol "$name" not found');
 }
 

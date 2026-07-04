@@ -38,6 +38,11 @@ const String _schema = 'dart-ads/pull/1';
 /// above any realistic symbol table.
 const int _maxItems = 100000;
 
+/// Total-bytes cap across all items (aligned with the frame guard): one item
+/// with a lying huge `size` must not pass validation into a giant sumWrite
+/// (WR-04).
+const int _maxTotalBytes = 4 * 1024 * 1024;
+
 /// One decoded, validated write intent parsed from a snapshot item.
 class _PushItem {
   const _PushItem(this.name, this.indexGroup, this.indexOffset, this.data);
@@ -169,6 +174,7 @@ List<_PushItem> _parseSnapshot(String text) {
     throw FormatException(
         'snapshot has ${rawSymbols.length} items, exceeding the $_maxItems cap');
   }
+  var totalBytes = 0;
 
   final out = <_PushItem>[];
   for (var i = 0; i < rawSymbols.length; i++) {
@@ -190,9 +196,14 @@ List<_PushItem> _parseSnapshot(String text) {
 
     // parseHex throws FormatException on any non-hex/odd input (-> exit 2).
     final data = parseHex(rawValue);
-    if (data.length > size) {
+    if (data.length != size) {
       throw FormatException('snapshot symbols[$i].value is ${data.length} '
           'bytes but the declared size is $size');
+    }
+    totalBytes += data.length;
+    if (totalBytes > _maxTotalBytes) {
+      throw FormatException(
+          'snapshot exceeds the $_maxTotalBytes-byte total cap (WR-04)');
     }
     out.add(_PushItem(name, group, offset, data));
   }

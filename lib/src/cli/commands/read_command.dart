@@ -243,11 +243,16 @@ const Map<String, int> _fixedTypeSizes = {
 Future<AdsSymbolInfo> _resolveOrRaise(AdsClient client, String name) async {
   final symbols = await client.browseSymbols();
   for (final s in symbols) {
-    if (s.name == name) return s;
+    if (s.name.toLowerCase() == name.toLowerCase()) return s;
   }
   // Not in the table: let the device raise its ADS error for the unknown name.
-  await client.getHandleByName(name);
-  // getHandleByName should have thrown; guard against a surprise success.
+  final surprise = await client.getHandleByName(name);
+  // getHandleByName should have thrown; guard against a surprise success
+  // (e.g. device-side case-insensitive match) — release the handle so it
+  // cannot leak (WR-06).
+  try {
+    await client.releaseHandle(surprise);
+  } catch (_) {/* best-effort release */}
   throw FormatException('symbol "$name" not found');
 }
 

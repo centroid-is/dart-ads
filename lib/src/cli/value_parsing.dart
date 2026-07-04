@@ -35,6 +35,11 @@ Uint8List parseHex(String input) {
   // Strip all internal whitespace.
   final compact = s.replaceAll(RegExp(r'\s+'), '');
   if (compact.isEmpty) return Uint8List(0);
+  // Strict digit check: int.tryParse(radix: 16) accepts signed tokens like
+  // '-1', which would silently truncate through Uint8List (CR-01).
+  if (!RegExp(r'^[0-9a-fA-F]+$').hasMatch(compact)) {
+    throw FormatException('Hex string contains non-hex characters', input);
+  }
   if (compact.length.isOdd) {
     throw FormatException('Hex string has an odd nibble count', input);
   }

@@ -218,4 +218,12 @@ void main() {
           equals('héllo'));
     });
   });
+
+  group('parseHex strict digits (CR-01)', () {
+    test('signed tokens throw FormatException', () {
+      expect(() => parseHex('-1-1'), throwsFormatException);
+      expect(() => parseHex('+f+f'), throwsFormatException);
+      expect(() => parseHex('0x-1'), throwsFormatException);
+    });
+  });
 }

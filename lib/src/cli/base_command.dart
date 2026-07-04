@@ -60,8 +60,22 @@ abstract class BaseAdsCommand extends Command<int> {
     } on FormatException catch (error) {
       stderr.writeln(error.message);
       return exitUsage;
+    } on RangeError catch (error) {
+      // MUST precede ArgumentError (RangeError extends it): a device-side
+      // short/malformed response is a protocol error, not a usage error
+      // (WR-07).
+      stderr.writeln('protocol error: short/malformed device response '
+          '(${error.message ?? error})');
+      return exitAdsError;
     } on ArgumentError catch (error) {
       stderr.writeln(error.message?.toString() ?? error.toString());
+      return exitUsage;
+    } on FileSystemException catch (error) {
+      // File-argument problems (--in/--out paths) are usage errors (WR-03).
+      stderr.writeln(
+        'file error: ${error.message}'
+        '${error.path != null ? ' (${error.path})' : ''}',
+      );
       return exitUsage;
     } catch (error) {
       // Unknown fault: surface it and map to the ADS/protocol exit code.
