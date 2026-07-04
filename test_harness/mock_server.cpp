@@ -68,7 +68,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 // ---- Deterministic identities (match the committed golden fixtures) --------
@@ -104,6 +106,34 @@ static void putU32(std::vector<uint8_t>& v, uint32_t x)
     for (int i = 0; i < 4; ++i) {
         v.push_back(static_cast<uint8_t>((x >> (8 * i)) & 0xFF));
     }
+}
+
+// ---- Little-endian scalar readers for the inbound request ADS payload -------
+// Every field read is BOUNDS-CHECKED against the payload length (bodyLen, itself
+// derived from the already-capped tcp.length()) BEFORE dereferencing, so a short
+// or hostile frame can never overread `inbuf` (threat T-3-03, ASVS V5). Explicit
+// little-endian shifts (never memcpy/host-order) satisfy the CLAUDE.md endian
+// rule and mirror putU16/putU32 so the codec is correct-by-inspection.
+static bool getU16(const uint8_t* body, size_t bodyLen, size_t off, uint16_t& out)
+{
+    if (off + 2 > bodyLen) {
+        return false;
+    }
+    out = static_cast<uint16_t>(static_cast<uint16_t>(body[off]) |
+                                (static_cast<uint16_t>(body[off + 1]) << 8));
+    return true;
+}
+
+static bool getU32(const uint8_t* body, size_t bodyLen, size_t off, uint32_t& out)
+{
+    if (off + 4 > bodyLen) {
+        return false;
+    }
+    out = static_cast<uint32_t>(body[off]) |
+          (static_cast<uint32_t>(body[off + 1]) << 8) |
+          (static_cast<uint32_t>(body[off + 2]) << 16) |
+          (static_cast<uint32_t>(body[off + 3]) << 24);
+    return true;
 }
 
 // Wrap an ADS-payload Frame in the 32-byte AoEHeader and the 6-byte AmsTcpHeader,
@@ -354,6 +384,16 @@ static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN,
         // must perform, so the mock is faithful under real TCP segmentation.
         std::vector<uint8_t> inbuf;
         std::vector<uint8_t> coalesceBuf;
+        // Connection-scoped data store + ADS state (research Pitfall 3 / T-3-01):
+        // declared inside the per-connection block so each accepted connection —
+        // i.e. each startMockServer() in each integration test — begins CLEAN and
+        // write-back persists only "within a session", never leaking across tests.
+        std::map<std::pair<uint32_t, uint32_t>, std::vector<uint8_t>> store;
+        uint16_t curAdsState = static_cast<uint16_t>(ADSSTATE_RUN); // 5 — seed to RUN
+        uint16_t curDeviceState = 0;
+        // Seed one fixture matching the read_req golden key so a pure Read (with no
+        // prior Write) returns meaningful bytes.
+        store[{ 0xF005u, 0x123u }] = { 0x2A, 0x00, 0x00, 0x00 };
         uint8_t chunk[4096];
         bool dropConnection = false;
         // Connection-scoped --delay-ms state: hold response #1, flush it last.
@@ -401,14 +441,150 @@ static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN,
                 }
                 if (tcp.length() >= sizeof(AoEHeader)) {
                     const AoEHeader aoe(inbuf.data() + sizeof(AmsTcpHeader));
+                    // Response addressing INVERTS the request's: target = request
+                    // source (the client), source = request target (the PLC/us).
+                    const AmsNetId rTarget = aoe.sourceAddr();
+                    const uint16_t rTargetPort = aoe.sourcePort();
+                    const AmsNetId rSource = aoe.targetAddr();
+                    const uint16_t rSourcePort = aoe.targetPort();
+                    const uint32_t rInvoke = aoe.invokeId();
+                    // ADS request body (bounds-checked via bodyLen below).
+                    const uint8_t* body =
+                        inbuf.data() + sizeof(AmsTcpHeader) + sizeof(AoEHeader);
+                    const size_t bodyLen =
+                        static_cast<size_t>(tcp.length()) - sizeof(AoEHeader);
+
+                    // A response is only emitted when haveRes becomes true; a
+                    // malformed/short request leaves haveRes false (no answer),
+                    // exactly like the Phase-1 "unknown command" default.
+                    std::vector<uint8_t> res;
+                    bool haveRes = false;
+
                     switch (aoe.cmdId()) {
                     case AoEHeader::READ_DEVICE_INFO: {
-                        // Response addressing INVERTS the request's:
-                        // target = request source (the client),
-                        // source = request target (the PLC/us).
-                        const std::vector<uint8_t> res = buildReadDeviceInfoRes(
-                            aoe.sourceAddr(), aoe.sourcePort(), aoe.targetAddr(),
-                            aoe.targetPort(), aoe.invokeId());
+                        res = buildReadDeviceInfoRes(rTarget, rTargetPort,
+                                                     rSource, rSourcePort, rInvoke);
+                        haveRes = true;
+                        break;
+                    }
+                    case AoEHeader::READ: {
+                        // Read (0x02): group u32, offset u32, length u32.
+                        uint32_t group, offset, length;
+                        if (!getU32(body, bodyLen, 0, group) ||
+                            !getU32(body, bodyLen, 4, offset) ||
+                            !getU32(body, bodyLen, 8, length) ||
+                            length > kMaxFrameBytes) {
+                            break; // malformed/hostile: no response
+                        }
+                        std::vector<uint8_t> data(length, 0);
+                        const auto it = store.find({ group, offset });
+                        if (it != store.end()) {
+                            const size_t n = std::min(
+                                static_cast<size_t>(length), it->second.size());
+                            std::copy(it->second.begin(),
+                                      it->second.begin() + n, data.begin());
+                        }
+                        std::vector<uint8_t> p;
+                        putU32(p, 0);      // result = 0
+                        putU32(p, length); // readLength
+                        p.insert(p.end(), data.begin(), data.end());
+                        Frame f(p.size(), p.data());
+                        res = wrapResponse(f, AoEHeader::READ, rTarget,
+                                           rTargetPort, rSource, rSourcePort, rInvoke);
+                        haveRes = true;
+                        break;
+                    }
+                    case AoEHeader::WRITE: {
+                        // Write (0x03): group u32, offset u32, length u32, data.
+                        uint32_t group, offset, length;
+                        if (!getU32(body, bodyLen, 0, group) ||
+                            !getU32(body, bodyLen, 4, offset) ||
+                            !getU32(body, bodyLen, 8, length) ||
+                            12u + static_cast<size_t>(length) > bodyLen) {
+                            break; // malformed/short: data not fully present
+                        }
+                        store[{ group, offset }] =
+                            std::vector<uint8_t>(body + 12, body + 12 + length);
+                        std::vector<uint8_t> p;
+                        putU32(p, 0); // result = 0
+                        Frame f(p.size(), p.data());
+                        res = wrapResponse(f, AoEHeader::WRITE, rTarget,
+                                           rTargetPort, rSource, rSourcePort, rInvoke);
+                        haveRes = true;
+                        break;
+                    }
+                    case AoEHeader::READ_WRITE: {
+                        // ReadWrite (0x09): group u32, offset u32, readLength u32,
+                        // writeLength u32, writeData[writeLength].
+                        uint32_t group, offset, readLength, writeLength;
+                        if (!getU32(body, bodyLen, 0, group) ||
+                            !getU32(body, bodyLen, 4, offset) ||
+                            !getU32(body, bodyLen, 8, readLength) ||
+                            !getU32(body, bodyLen, 12, writeLength) ||
+                            readLength > kMaxFrameBytes ||
+                            16u + static_cast<size_t>(writeLength) > bodyLen) {
+                            break; // malformed/hostile
+                        }
+                        // Write-then-read the SAME key.
+                        store[{ group, offset }] = std::vector<uint8_t>(
+                            body + 16, body + 16 + writeLength);
+                        std::vector<uint8_t> data(readLength, 0);
+                        const auto it = store.find({ group, offset });
+                        if (it != store.end()) {
+                            const size_t n = std::min(
+                                static_cast<size_t>(readLength), it->second.size());
+                            std::copy(it->second.begin(),
+                                      it->second.begin() + n, data.begin());
+                        }
+                        std::vector<uint8_t> p;
+                        putU32(p, 0);          // result = 0
+                        putU32(p, readLength); // readLength
+                        p.insert(p.end(), data.begin(), data.end());
+                        Frame f(p.size(), p.data());
+                        res = wrapResponse(f, AoEHeader::READ_WRITE, rTarget,
+                                           rTargetPort, rSource, rSourcePort, rInvoke);
+                        haveRes = true;
+                        break;
+                    }
+                    case AoEHeader::READ_STATE: {
+                        // ReadState (0x04): no request payload. Reflect the
+                        // connection-scoped current state (stateful WriteControl).
+                        std::vector<uint8_t> p;
+                        putU32(p, 0);              // result = 0
+                        putU16(p, curAdsState);    // adsState
+                        putU16(p, curDeviceState); // deviceState
+                        Frame f(p.size(), p.data());
+                        res = wrapResponse(f, AoEHeader::READ_STATE, rTarget,
+                                           rTargetPort, rSource, rSourcePort, rInvoke);
+                        haveRes = true;
+                        break;
+                    }
+                    case AoEHeader::WRITE_CONTROL: {
+                        // WriteControl (0x05): adsState u16, deviceState u16,
+                        // length u32, data[length]. Stateful: a later ReadState
+                        // observably returns the state set here.
+                        uint16_t adsState, deviceState;
+                        if (!getU16(body, bodyLen, 0, adsState) ||
+                            !getU16(body, bodyLen, 2, deviceState)) {
+                            break; // malformed/short
+                        }
+                        curAdsState = adsState;
+                        curDeviceState = deviceState;
+                        std::vector<uint8_t> p;
+                        putU32(p, 0); // result = 0
+                        Frame f(p.size(), p.data());
+                        res = wrapResponse(f, AoEHeader::WRITE_CONTROL, rTarget,
+                                           rTargetPort, rSource, rSourcePort, rInvoke);
+                        haveRes = true;
+                        break;
+                    }
+                    default:
+                        // Unknown command: silently ignored; the command table
+                        // grows in later phases.
+                        break;
+                    }
+
+                    if (haveRes) {
                         // --delay-ms N: defer response #1, send #2..N now.
                         ++respCount;
                         if (delayMs > 0 && respCount == 1) {
@@ -417,12 +593,6 @@ static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN,
                         } else {
                             sendResponse(fd, res, mode, fragmentN, coalesceBuf);
                         }
-                        break;
-                    }
-                    default:
-                        // Unknown command: silently ignored in Phase 1; the
-                        // command table grows in later phases.
-                        break;
                     }
                 }
                 inbuf.erase(inbuf.begin(), inbuf.begin() + frameLen);
