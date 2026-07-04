@@ -1,9 +1,11 @@
 /// The [AdsClient] (L6-lite): the idiomatic async Dart API over the six core ADS
 /// commands.
 ///
-/// Each method builds the raw ADS payload (the bytes AFTER the 38-byte AMS/TCP +
-/// AMS header prefix — the header is stamped by [AmsConnection.request]), sends
-/// it through the connection, and maps the reply. Error mapping happens at BOTH
+/// Each method obtains the raw ADS payload (the bytes AFTER the 38-byte AMS/TCP
+/// + AMS header prefix — the header is stamped by [AmsConnection.request]) from
+/// the shared `build*Payload` builders in `protocol/commands.dart` — the single
+/// source of truth for the wire layouts, also consumed by the full-frame
+/// encoders — sends it through the connection, and maps the reply. Error mapping happens at BOTH
 /// levels via [AdsException.fromCode] (ERR-01):
 ///
 ///   1. the AMS-header `errorCode` is checked BEFORE the payload is decoded, so
@@ -27,7 +29,6 @@ import '../protocol/ads_error.dart';
 import '../protocol/ams_net_id.dart';
 import '../protocol/commands.dart';
 import '../protocol/constants.dart';
-import '../protocol/range_check.dart';
 import 'ads_types.dart';
 
 /// An idiomatic async client for the six core ADS commands over a single
@@ -70,11 +71,11 @@ class AdsClient {
     required int length,
     Duration? timeout,
   }) async {
-    final payload = Uint8List(12);
-    final bd = ByteData.sublistView(payload);
-    bd.setUint32(0, checkUint(indexGroup, 32, 'indexGroup'), Endian.little);
-    bd.setUint32(4, checkUint(indexOffset, 32, 'indexOffset'), Endian.little);
-    bd.setUint32(8, checkUint(length, 32, 'length'), Endian.little);
+    final payload = buildReadPayload(
+      indexGroup: indexGroup,
+      indexOffset: indexOffset,
+      length: length,
+    );
 
     final response = await _command(AdsCommandId.read, payload, timeout);
     final decoded = decodeReadResponse(response);
@@ -89,12 +90,11 @@ class AdsClient {
     required Uint8List data,
     Duration? timeout,
   }) async {
-    final payload = Uint8List(12 + data.length);
-    final bd = ByteData.sublistView(payload);
-    bd.setUint32(0, checkUint(indexGroup, 32, 'indexGroup'), Endian.little);
-    bd.setUint32(4, checkUint(indexOffset, 32, 'indexOffset'), Endian.little);
-    bd.setUint32(8, checkUint(data.length, 32, 'data.length'), Endian.little);
-    payload.setRange(12, 12 + data.length, data);
+    final payload = buildWritePayload(
+      indexGroup: indexGroup,
+      indexOffset: indexOffset,
+      data: data,
+    );
 
     final response = await _command(AdsCommandId.write, payload, timeout);
     _throwOnResult(decodeWriteResponse(response).result);
@@ -111,14 +111,12 @@ class AdsClient {
     required Uint8List writeData,
     Duration? timeout,
   }) async {
-    final payload = Uint8List(16 + writeData.length);
-    final bd = ByteData.sublistView(payload);
-    bd.setUint32(0, checkUint(indexGroup, 32, 'indexGroup'), Endian.little);
-    bd.setUint32(4, checkUint(indexOffset, 32, 'indexOffset'), Endian.little);
-    bd.setUint32(8, checkUint(readLength, 32, 'readLength'), Endian.little);
-    bd.setUint32(
-        12, checkUint(writeData.length, 32, 'writeData.length'), Endian.little);
-    payload.setRange(16, 16 + writeData.length, writeData);
+    final payload = buildReadWritePayload(
+      indexGroup: indexGroup,
+      indexOffset: indexOffset,
+      readLength: readLength,
+      writeData: writeData,
+    );
 
     final response = await _command(AdsCommandId.readWrite, payload, timeout);
     final decoded = decodeReadWriteResponse(response);
@@ -150,13 +148,11 @@ class AdsClient {
     Uint8List? data,
     Duration? timeout,
   }) async {
-    final body = data ?? Uint8List(0);
-    final payload = Uint8List(8 + body.length);
-    final bd = ByteData.sublistView(payload);
-    bd.setUint16(0, checkUint(adsState.code, 16, 'adsState'), Endian.little);
-    bd.setUint16(2, checkUint(deviceState, 16, 'deviceState'), Endian.little);
-    bd.setUint32(4, checkUint(body.length, 32, 'data.length'), Endian.little);
-    payload.setRange(8, 8 + body.length, body);
+    final payload = buildWriteControlPayload(
+      adsState: adsState.code,
+      deviceState: deviceState,
+      data: data,
+    );
 
     final response =
         await _command(AdsCommandId.writeControl, payload, timeout);

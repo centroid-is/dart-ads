@@ -141,6 +141,86 @@ final class ReadWriteResponse extends AdsResponse {
 }
 
 // ---------------------------------------------------------------------------
+// ADS request-payload builders (single source of truth for payload layouts)
+// ---------------------------------------------------------------------------
+//
+// Each builder produces the raw ADS request payload — the bytes AFTER the
+// 38-byte AmsTcp + Ams header prefix. Both the full-frame encoders below AND
+// the async `AdsClient` (which hands payloads to `AmsConnection.request`)
+// consume these builders, so the wire layout of each command lives in exactly
+// one place and cannot silently diverge between the two paths. The golden
+// byte fixtures pin the encoders, which transitively pin these builders.
+// They are package-internal: intentionally NOT re-exported by `dart_ads.dart`.
+
+/// Builds the Read (0x02) request payload:
+/// `indexGroup u32 + indexOffset u32 + length u32` (12 bytes).
+Uint8List buildReadPayload({
+  required int indexGroup,
+  required int indexOffset,
+  required int length,
+}) {
+  final payload = Uint8List(12);
+  final bd = ByteData.sublistView(payload);
+  bd.setUint32(0, checkUint(indexGroup, 32, 'indexGroup'), Endian.little);
+  bd.setUint32(4, checkUint(indexOffset, 32, 'indexOffset'), Endian.little);
+  bd.setUint32(8, checkUint(length, 32, 'length'), Endian.little);
+  return payload;
+}
+
+/// Builds the Write (0x03) request payload:
+/// `indexGroup u32 + indexOffset u32 + length u32 + data[length]`.
+Uint8List buildWritePayload({
+  required int indexGroup,
+  required int indexOffset,
+  required Uint8List data,
+}) {
+  final payload = Uint8List(12 + data.length);
+  final bd = ByteData.sublistView(payload);
+  bd.setUint32(0, checkUint(indexGroup, 32, 'indexGroup'), Endian.little);
+  bd.setUint32(4, checkUint(indexOffset, 32, 'indexOffset'), Endian.little);
+  bd.setUint32(8, checkUint(data.length, 32, 'data.length'), Endian.little);
+  payload.setRange(12, 12 + data.length, data);
+  return payload;
+}
+
+/// Builds the WriteControl (0x05) request payload:
+/// `adsState u16 + deviceState u16 + length u32 + data[length]`, with [data]
+/// defaulting to empty.
+Uint8List buildWriteControlPayload({
+  required int adsState,
+  required int deviceState,
+  Uint8List? data,
+}) {
+  final body = data ?? _empty;
+  final payload = Uint8List(8 + body.length);
+  final bd = ByteData.sublistView(payload);
+  bd.setUint16(0, checkUint(adsState, 16, 'adsState'), Endian.little);
+  bd.setUint16(2, checkUint(deviceState, 16, 'deviceState'), Endian.little);
+  bd.setUint32(4, checkUint(body.length, 32, 'data.length'), Endian.little);
+  payload.setRange(8, 8 + body.length, body);
+  return payload;
+}
+
+/// Builds the ReadWrite (0x09) request payload: `indexGroup u32 + indexOffset
+/// u32 + readLength u32 + writeLength u32 + writeData[writeLength]`.
+Uint8List buildReadWritePayload({
+  required int indexGroup,
+  required int indexOffset,
+  required int readLength,
+  required Uint8List writeData,
+}) {
+  final payload = Uint8List(16 + writeData.length);
+  final bd = ByteData.sublistView(payload);
+  bd.setUint32(0, checkUint(indexGroup, 32, 'indexGroup'), Endian.little);
+  bd.setUint32(4, checkUint(indexOffset, 32, 'indexOffset'), Endian.little);
+  bd.setUint32(8, checkUint(readLength, 32, 'readLength'), Endian.little);
+  bd.setUint32(
+      12, checkUint(writeData.length, 32, 'writeData.length'), Endian.little);
+  payload.setRange(16, 16 + writeData.length, writeData);
+  return payload;
+}
+
+// ---------------------------------------------------------------------------
 // Request encoders
 // ---------------------------------------------------------------------------
 
@@ -170,20 +250,18 @@ Uint8List encodeReadRequest({
   required int indexGroup,
   required int indexOffset,
   required int length,
-}) {
-  final payload = Uint8List(12);
-  final bd = ByteData.sublistView(payload);
-  bd.setUint32(0, checkUint(indexGroup, 32, 'indexGroup'), Endian.little);
-  bd.setUint32(4, checkUint(indexOffset, 32, 'indexOffset'), Endian.little);
-  bd.setUint32(8, checkUint(length, 32, 'length'), Endian.little);
-  return _frame(
-    target: target,
-    source: source,
-    invokeId: invokeId,
-    commandId: AdsCommandId.read,
-    payload: payload,
-  );
-}
+}) =>
+    _frame(
+      target: target,
+      source: source,
+      invokeId: invokeId,
+      commandId: AdsCommandId.read,
+      payload: buildReadPayload(
+        indexGroup: indexGroup,
+        indexOffset: indexOffset,
+        length: length,
+      ),
+    );
 
 /// Encodes a Write (0x03) request: write [data] at [indexGroup]/[indexOffset].
 Uint8List encodeWriteRequest({
@@ -193,21 +271,18 @@ Uint8List encodeWriteRequest({
   required int indexGroup,
   required int indexOffset,
   required Uint8List data,
-}) {
-  final payload = Uint8List(12 + data.length);
-  final bd = ByteData.sublistView(payload);
-  bd.setUint32(0, checkUint(indexGroup, 32, 'indexGroup'), Endian.little);
-  bd.setUint32(4, checkUint(indexOffset, 32, 'indexOffset'), Endian.little);
-  bd.setUint32(8, checkUint(data.length, 32, 'data.length'), Endian.little);
-  payload.setRange(12, 12 + data.length, data);
-  return _frame(
-    target: target,
-    source: source,
-    invokeId: invokeId,
-    commandId: AdsCommandId.write,
-    payload: payload,
-  );
-}
+}) =>
+    _frame(
+      target: target,
+      source: source,
+      invokeId: invokeId,
+      commandId: AdsCommandId.write,
+      payload: buildWritePayload(
+        indexGroup: indexGroup,
+        indexOffset: indexOffset,
+        data: data,
+      ),
+    );
 
 /// Encodes a ReadState (0x04) request. The command carries no ADS payload.
 Uint8List encodeReadStateRequest({
@@ -232,22 +307,18 @@ Uint8List encodeWriteControlRequest({
   required int adsState,
   required int deviceState,
   Uint8List? data,
-}) {
-  final body = data ?? _empty;
-  final payload = Uint8List(8 + body.length);
-  final bd = ByteData.sublistView(payload);
-  bd.setUint16(0, checkUint(adsState, 16, 'adsState'), Endian.little);
-  bd.setUint16(2, checkUint(deviceState, 16, 'deviceState'), Endian.little);
-  bd.setUint32(4, checkUint(body.length, 32, 'data.length'), Endian.little);
-  payload.setRange(8, 8 + body.length, body);
-  return _frame(
-    target: target,
-    source: source,
-    invokeId: invokeId,
-    commandId: AdsCommandId.writeControl,
-    payload: payload,
-  );
-}
+}) =>
+    _frame(
+      target: target,
+      source: source,
+      invokeId: invokeId,
+      commandId: AdsCommandId.writeControl,
+      payload: buildWriteControlPayload(
+        adsState: adsState,
+        deviceState: deviceState,
+        data: data,
+      ),
+    );
 
 /// Encodes a ReadWrite (0x09) request: write [writeData] and read back
 /// [readLength] bytes at [indexGroup]/[indexOffset].
@@ -259,23 +330,19 @@ Uint8List encodeReadWriteRequest({
   required int indexOffset,
   required int readLength,
   required Uint8List writeData,
-}) {
-  final payload = Uint8List(16 + writeData.length);
-  final bd = ByteData.sublistView(payload);
-  bd.setUint32(0, checkUint(indexGroup, 32, 'indexGroup'), Endian.little);
-  bd.setUint32(4, checkUint(indexOffset, 32, 'indexOffset'), Endian.little);
-  bd.setUint32(8, checkUint(readLength, 32, 'readLength'), Endian.little);
-  bd.setUint32(
-      12, checkUint(writeData.length, 32, 'writeData.length'), Endian.little);
-  payload.setRange(16, 16 + writeData.length, writeData);
-  return _frame(
-    target: target,
-    source: source,
-    invokeId: invokeId,
-    commandId: AdsCommandId.readWrite,
-    payload: payload,
-  );
-}
+}) =>
+    _frame(
+      target: target,
+      source: source,
+      invokeId: invokeId,
+      commandId: AdsCommandId.readWrite,
+      payload: buildReadWritePayload(
+        indexGroup: indexGroup,
+        indexOffset: indexOffset,
+        readLength: readLength,
+        writeData: writeData,
+      ),
+    );
 
 // ---------------------------------------------------------------------------
 // Response decoders
