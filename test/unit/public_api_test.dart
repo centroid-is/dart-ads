@@ -81,5 +81,31 @@ void main() {
       expect(sample.handle, equals(0x2A));
       expect(sample.data, hasLength(3));
     });
+
+    test('sum (batched) command types are reachable through the barrel', () {
+      // The three per-item request types consumers pass to the AdsClient sum
+      // methods, constructible purely through the public import.
+      const readItem =
+          SumReadRequest(indexGroup: 0x4020, indexOffset: 0, length: 4);
+      final writeItem = SumWriteRequest(
+          indexGroup: 0x4020, indexOffset: 0, data: Uint8List.fromList([1]));
+      final rwItem = SumReadWriteRequest(
+        indexGroup: 0x4020,
+        indexOffset: 0,
+        readLength: 4,
+        writeData: Uint8List.fromList([1]),
+      );
+      expect(readItem.length, equals(4));
+      expect(writeItem.data, hasLength(1));
+      expect(rwItem.readLength, equals(4));
+
+      // SumResult: the per-item outcome, with its success predicate and
+      // valueOrThrow accessor on the public surface.
+      const ok = SumResult<Uint8List>(errorCode: 0);
+      const bad = SumResult<Uint8List>(errorCode: 0x0703);
+      expect(ok.isSuccess, isTrue);
+      expect(bad.isSuccess, isFalse);
+      expect(() => bad.valueOrThrow, throwsA(isA<AdsException>()));
+    });
   });
 }

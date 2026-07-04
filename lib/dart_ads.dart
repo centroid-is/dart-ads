@@ -57,6 +57,15 @@ export 'src/protocol/commands.dart'
 export 'src/protocol/notifications.dart'
     show AdsNotification, AdsTransmissionMode;
 
+/// The sum (batched) command public value types: the three per-item request
+/// types consumers pass to `AdsClient.sumRead` / `sumWrite` / `sumReadWrite`,
+/// and the [SumResult] each item comes back as. The inner `buildSum*Payload`
+/// builders and `decodeSum*Response` decoders stay package-private (wire
+/// internals), mirroring how the notification builders/decoders are kept off the
+/// public surface.
+export 'src/protocol/sum_commands.dart'
+    show SumReadRequest, SumWriteRequest, SumReadWriteRequest, SumResult;
+
 /// The streaming AMS/TCP frame reassembler.
 export 'src/protocol/frame_assembler.dart' show FrameAssembler;
 
