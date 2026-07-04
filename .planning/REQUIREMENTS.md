@@ -64,14 +64,14 @@ Requirements for initial release (full AdsLib parity). Each maps to roadmap phas
 
 ### CLI
 
-- [ ] **CLI-01**: `browse` — list/filter PLC symbols with optional glob filter and `--json`
-- [ ] **CLI-02**: `read` — read a variable by name or by `--group/--offset[/--len]`, typed by default or `--raw`
-- [ ] **CLI-03**: `write` — write a variable by name or group/offset, value parsed to the PLC type or `--raw` hex
-- [ ] **CLI-04**: `subscribe` — stream timestamped live notifications until interrupted, with `--on-change`/`--cycle`/`--max-delay`
-- [ ] **CLI-05**: `pull` — snapshot symbols and/or current values to a file (JSON/CSV) using sum-read
-- [ ] **CLI-06**: `push` — apply values from a file back to the PLC using sum-write, with `--dry-run` and per-item pass/fail
+- [x] **CLI-01**: `browse` — list/filter PLC symbols with optional glob filter and `--json`
+- [x] **CLI-02**: `read` — read a variable by name or by `--group/--offset[/--len]`, typed by default or `--raw`
+- [x] **CLI-03**: `write` — write a variable by name or group/offset, value parsed to the PLC type or `--raw` hex
+- [x] **CLI-04**: `subscribe` — stream timestamped live notifications until interrupted, with `--on-change`/`--cycle`/`--max-delay`
+- [x] **CLI-05**: `pull` — snapshot symbols and/or current values to a file (JSON/CSV) using sum-read
+- [x] **CLI-06**: `push` — apply values from a file back to the PLC using sum-write, with `--dry-run` and per-item pass/fail
 - [x] **CLI-07**: `action` — issue a state change `--state=RUN|CONFIG|STOP` via WriteControl
-- [ ] **CLI-08**: All commands share consistent connection flags (`--target`/`--host`/`--port`/`--timeout`), stable exit codes, and human-readable ADS error names
+- [x] **CLI-08**: All commands share consistent connection flags (`--target`/`--host`/`--port`/`--timeout`), stable exit codes, and human-readable ADS error names
 
 ### Test Harness (C++ / CMake)
 
@@ -163,14 +163,14 @@ Which phases cover which requirements. Populated during roadmap creation.
 | SYM-02 | Phase 7 | Complete |
 | SYM-03 | Phase 7 | Complete |
 | SYM-04 | Phase 7 | Complete |
-| CLI-01 | Phase 8 | Pending |
-| CLI-02 | Phase 8 | Pending |
-| CLI-03 | Phase 8 | Pending |
-| CLI-04 | Phase 8 | Pending |
-| CLI-05 | Phase 8 | Pending |
-| CLI-06 | Phase 8 | Pending |
+| CLI-01 | Phase 8 | Complete |
+| CLI-02 | Phase 8 | Complete |
+| CLI-03 | Phase 8 | Complete |
+| CLI-04 | Phase 8 | Complete |
+| CLI-05 | Phase 8 | Complete |
+| CLI-06 | Phase 8 | Complete |
 | CLI-07 | Phase 8 | Complete |
-| CLI-08 | Phase 8 | Pending |
+| CLI-08 | Phase 8 | Complete |
 | PKG-01 | Phase 9 | Pending |
 | PKG-02 | Phase 9 | Pending |
 

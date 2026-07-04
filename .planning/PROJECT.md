@@ -37,16 +37,16 @@ A Dart application can reliably connect to a Beckhoff PLC and read, write, and s
 - [x] Route / AmsRouter management (add/remove routes, setLocalAddress) — Validated in Phase 4
 
 **API surface**
-- [ ] Idiomatic async Dart API: `Future`s for request/response, `Stream`s for notifications, non-blocking sockets
+- [x] Idiomatic async Dart API — Validated across Phases 2–7
 
 **Dart CLI**
-- [ ] `browse` — browse/list PLC symbols
-- [ ] `read` — read a variable (by name or index-group/offset)
-- [ ] `write` — write a variable
-- [ ] `subscribe` — stream device notifications for a symbol
-- [ ] `pull` — download data/symbols from the PLC (e.g. dump symbols or values to file)
-- [ ] `push` — upload/write data to the PLC (e.g. apply values from file)
-- [ ] `action` — issue a control action / method call (WriteControl / RPC-style invocation)
+- [x] `browse` — Validated in Phase 8
+- [x] `read` — Validated in Phase 8
+- [x] `write` — Validated in Phase 8
+- [x] `subscribe` — Validated in Phase 8 (clean SIGINT teardown)
+- [x] `pull` — Validated in Phase 8 (lossless JSON snapshot via sum-read)
+- [x] `push` — Validated in Phase 8 (sum-write, --dry-run, per-item report)
+- [x] `action` — Validated in Phase 8 (WriteControl state changes; RPC mode v2)
 
 **Testing**
 - [x] C++ mock ADS server built with CMake, reusing AdsLib framing, that Dart integration tests connect to — Validated in Phase 1 (mock + dump_golden + selftest; live connect lands in Phase 2)
@@ -109,4 +109,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-04 after Phase 7 (Symbol Access, Browse & Typed Values) completion*
+*Last updated: 2026-07-04 after Phase 8 (Dart CLI) completion*
