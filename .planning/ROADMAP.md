@@ -70,7 +70,13 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. User can read device state (ReadState) and device info (ReadDeviceInfo), and set state via WriteControl
   3. Every ADS error code carried in a response maps to a typed Dart exception distinct from transport/timeout errors
   4. Each core command has an integration test passing against the mock server
-**Plans**: TBD
+**Plans**: 6 plans in 3 waves
+  - [ ] 03-01-PLAN.md — C++ mock: data store, stateful ReadState/WriteControl, two magic error-group fixtures (wave 1)
+  - [ ] 03-02-PLAN.md — Pure error assets: full ADS error table, AdsException, AdsState enum (wave 1)
+  - [ ] 03-03-PLAN.md — request() seam: surface AMS-header errorCode to the client (wave 1)
+  - [ ] 03-04-PLAN.md — AdsClient + AdsStateInfo/DeviceInfo + both-levels throw (FakeTransport unit tests) (wave 2)
+  - [ ] 03-05-PLAN.md — Live integration: per-command success + both error levels via magic groups (wave 3)
+  - [ ] 03-06-PLAN.md — C++ AdsLibTest parity ports (partial TEST-05): 10 named scenarios (wave 3)
 **UI hint**: no
 
 ### Phase 4: AmsRouter & Direct / Local-Router Transport Modes
@@ -156,7 +162,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 |-------|----------------|--------|-----------|
 | 1. Protocol Framing, Codecs & Golden-Frame Harness | 7/7 | Complete   | 2026-07-03 |
 | 2. TCP Transport, Lifecycle & Correlation | 4/4 | Complete   | 2026-07-03 |
-| 3. Core ADS Commands & Error Mapping | 0/TBD | Not started | - |
+| 3. Core ADS Commands & Error Mapping | 0/6 | Not started | - |
 | 4. AmsRouter & Transport Modes | 0/TBD | Not started | - |
 | 5. Device Notifications as Streams | 0/TBD | Not started | - |
 | 6. Sum (Batched) Commands | 0/TBD | Not started | - |
