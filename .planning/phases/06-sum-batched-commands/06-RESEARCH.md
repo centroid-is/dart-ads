@@ -348,7 +348,9 @@ Pick the 0-byte-on-failure convention (simplest, keeps error region and data reg
 separable) and make mock + decoder + golden agree. Flag in the parity header for the Phase 9 audit
 that no C++ AdsLibTest sum scenario exists to cross-validate against (per CONTEXT.md decision).
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> RESOLVED: trust outer indexOffset as N; validate it equals writeLength/12 for READ/WRITE (16B stride for READWRITE); break on mismatch (implemented in plan 06-02 Task 1).
 
 1. **N derivation in the mock for READ** — outer `indexOffset` carries N, but the mock could also
    derive `N = writeLength/12`. Recommendation: trust outer `indexOffset` as N and *validate* it
