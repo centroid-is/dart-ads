@@ -33,7 +33,13 @@ import '../protocol/constants.dart';
 import '../protocol/exceptions.dart';
 import '../protocol/notifications.dart';
 import '../protocol/sum_commands.dart';
+import '../protocol/symbols.dart';
+import '../protocol/value_codec.dart' as codec;
 import 'ads_types.dart';
+
+/// The `{nSymbols, nSymSize}` header a SYM_UPLOADINFO (0xF00C) read returns —
+/// the symbol count and the total byte size of the SYM_UPLOAD (0xF00B) blob.
+typedef SymbolUploadInfo = ({int symbolCount, int symbolSize});
 
 /// An idiomatic async client for the six core ADS commands over a single
 /// [AmsConnection].
@@ -228,6 +234,170 @@ class AdsClient {
       // the operation's own outcome.
     }
   }
+
+  // -------------------------------------------------------------------------
+  // Symbol browse (SYM-02)
+  // -------------------------------------------------------------------------
+
+  /// A defensive ceiling on the SYM_UPLOAD blob size before allocating a read
+  /// buffer for a device-controlled length (threat T-7-02b). 16 MiB dwarfs any
+  /// realistic symbol table yet caps a hostile/garbage `nSymSize`.
+  static const int _maxSymbolBlobBytes = 16 * 1024 * 1024;
+
+  /// Reads the SYM_UPLOADINFO (0xF00C) header: the symbol count and the total
+  /// byte size of the upload blob.
+  Future<SymbolUploadInfo> uploadSymbolInfo({Duration? timeout}) async {
+    final raw = await read(
+      indexGroup: AdsIndexGroup.symbolUploadInfo,
+      indexOffset: 0,
+      length: 8,
+      timeout: timeout,
+    );
+    if (raw.length < 8) {
+      throw MalformedFrameException(
+        'SYM_UPLOADINFO returned ${raw.length} bytes, expected 8',
+        length: 8,
+        offset: 0,
+      );
+    }
+    final bd = ByteData.sublistView(raw);
+    return (
+      symbolCount: bd.getUint32(0, Endian.little),
+      symbolSize: bd.getUint32(4, Endian.little),
+    );
+  }
+
+  /// Browses the device's symbol table: SYM_UPLOADINFO (0xF00C) then a
+  /// SYM_UPLOAD (0xF00B) read of `nSymSize` bytes, parsed into an ordered
+  /// `List<AdsSymbolInfo>` by the pure [parseSymbolBlob] (order preserved).
+  ///
+  /// `nSymSize` is sanity-capped against [_maxSymbolBlobBytes] BEFORE allocating
+  /// the read buffer (threat T-7-02b); an out-of-range value throws
+  /// [MalformedFrameException] instead of attempting a huge allocation. An empty
+  /// table returns `const []` with no second read.
+  Future<List<AdsSymbolInfo>> browseSymbols({Duration? timeout}) async {
+    final info = await uploadSymbolInfo(timeout: timeout);
+    final size = info.symbolSize;
+    if (size < 0 || size > _maxSymbolBlobBytes) {
+      throw MalformedFrameException(
+        'SYM_UPLOADINFO declares nSymSize $size, outside the sane range '
+        '[0, $_maxSymbolBlobBytes]',
+        length: size,
+        offset: 0,
+      );
+    }
+    if (size == 0) return const <AdsSymbolInfo>[];
+    final blob = await read(
+      indexGroup: AdsIndexGroup.symbolUpload,
+      indexOffset: 0,
+      length: size,
+      timeout: timeout,
+    );
+    return parseSymbolBlob(blob, info.symbolCount);
+  }
+
+  // -------------------------------------------------------------------------
+  // Typed convenience over value_codec (SYM-03)
+  // -------------------------------------------------------------------------
+  //
+  // Each typed read is a `readByName` + a codec decode; each typed write is a
+  // codec encode + a `writeByName`. The raw `Uint8List` path stays available
+  // unchanged (SYM-04) — these are additive conveniences, not a replacement.
+  // STRING/WSTRING take the symbol's declared buffer `size` (STRING(80) == 81).
+
+  /// Reads a BOOL by [name].
+  Future<bool> readBoolByName(String name, {Duration? timeout}) async =>
+      codec.decodeBool(await readByName(name, 1, timeout: timeout));
+
+  /// Writes a BOOL by [name].
+  Future<void> writeBoolByName(String name, bool value, {Duration? timeout}) =>
+      writeByName(name, codec.encodeBool(value), timeout: timeout);
+
+  /// Reads a BYTE/USINT (u8) by [name].
+  Future<int> readByteByName(String name, {Duration? timeout}) async =>
+      codec.decodeByte(await readByName(name, 1, timeout: timeout));
+
+  /// Writes a BYTE/USINT (u8) by [name].
+  Future<void> writeByteByName(String name, int value, {Duration? timeout}) =>
+      writeByName(name, codec.encodeByte(value), timeout: timeout);
+
+  /// Reads a SINT (i8) by [name].
+  Future<int> readSintByName(String name, {Duration? timeout}) async =>
+      codec.decodeSint(await readByName(name, 1, timeout: timeout));
+
+  /// Writes a SINT (i8) by [name].
+  Future<void> writeSintByName(String name, int value, {Duration? timeout}) =>
+      writeByName(name, codec.encodeSint(value), timeout: timeout);
+
+  /// Reads a WORD/UINT (u16) by [name].
+  Future<int> readWordByName(String name, {Duration? timeout}) async =>
+      codec.decodeWord(await readByName(name, 2, timeout: timeout));
+
+  /// Writes a WORD/UINT (u16) by [name].
+  Future<void> writeWordByName(String name, int value, {Duration? timeout}) =>
+      writeByName(name, codec.encodeWord(value), timeout: timeout);
+
+  /// Reads an INT (i16) by [name].
+  Future<int> readIntByName(String name, {Duration? timeout}) async =>
+      codec.decodeInt(await readByName(name, 2, timeout: timeout));
+
+  /// Writes an INT (i16) by [name].
+  Future<void> writeIntByName(String name, int value, {Duration? timeout}) =>
+      writeByName(name, codec.encodeInt(value), timeout: timeout);
+
+  /// Reads a DWORD/UDINT (u32) by [name].
+  Future<int> readDwordByName(String name, {Duration? timeout}) async =>
+      codec.decodeDword(await readByName(name, 4, timeout: timeout));
+
+  /// Writes a DWORD/UDINT (u32) by [name].
+  Future<void> writeDwordByName(String name, int value, {Duration? timeout}) =>
+      writeByName(name, codec.encodeDword(value), timeout: timeout);
+
+  /// Reads a DINT (i32) by [name].
+  Future<int> readDintByName(String name, {Duration? timeout}) async =>
+      codec.decodeDint(await readByName(name, 4, timeout: timeout));
+
+  /// Writes a DINT (i32) by [name].
+  Future<void> writeDintByName(String name, int value, {Duration? timeout}) =>
+      writeByName(name, codec.encodeDint(value), timeout: timeout);
+
+  /// Reads a REAL (f32) by [name].
+  Future<double> readRealByName(String name, {Duration? timeout}) async =>
+      codec.decodeReal(await readByName(name, 4, timeout: timeout));
+
+  /// Writes a REAL (f32) by [name].
+  Future<void> writeRealByName(String name, double value, {Duration? timeout}) =>
+      writeByName(name, codec.encodeReal(value), timeout: timeout);
+
+  /// Reads an LREAL (f64) by [name].
+  Future<double> readLrealByName(String name, {Duration? timeout}) async =>
+      codec.decodeLreal(await readByName(name, 8, timeout: timeout));
+
+  /// Writes an LREAL (f64) by [name].
+  Future<void> writeLrealByName(String name, double value,
+          {Duration? timeout}) =>
+      writeByName(name, codec.encodeLreal(value), timeout: timeout);
+
+  /// Reads a STRING by [name] from a [size]-byte buffer (use the symbol's
+  /// declared `size`; STRING(80) reports 81).
+  Future<String> readStringByName(String name, int size,
+          {Duration? timeout}) async =>
+      codec.decodeString(await readByName(name, size, timeout: timeout));
+
+  /// Writes a STRING by [name] into a [size]-byte buffer (NUL-padded).
+  Future<void> writeStringByName(String name, String value, int size,
+          {Duration? timeout}) =>
+      writeByName(name, codec.encodeString(value, size), timeout: timeout);
+
+  /// Reads a WSTRING by [name] from a [size]-byte buffer.
+  Future<String> readWStringByName(String name, int size,
+          {Duration? timeout}) async =>
+      codec.decodeWString(await readByName(name, size, timeout: timeout));
+
+  /// Writes a WSTRING by [name] into a [size]-byte buffer.
+  Future<void> writeWStringByName(String name, String value, int size,
+          {Duration? timeout}) =>
+      writeByName(name, codec.encodeWString(value, size), timeout: timeout);
 
   /// Issues a SUMUP_READ (0xF080) batch — reads every item in [items] in a
   /// SINGLE ReadWrite round-trip — returning one [SumResult] per item in request
