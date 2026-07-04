@@ -145,8 +145,8 @@ Decimal phases appear between their surrounding integers in numeric order.
   - [x] 07-01-PLAN.md — Pure AdsSymbolEntry blob parser (entryLength advancement + hostile-blob guards) (wave 1)
   - [x] 07-02-PLAN.md — Pure LE value codec (scalars + STRING/WSTRING, overflow-guarded) (wave 1)
   - [x] 07-03-PLAN.md — Mock: 4-symbol table + 0xF003/5/6/B/C dispatch + NUL-tolerant lookup + sym-handle-count magic group (wave 1)
-  - [ ] 07-04-PLAN.md — dump_golden symbol fixtures (handle req/res, uploadinfo, 2-symbol padded blob) + byte-parity test (wave 2)
-  - [ ] 07-05-PLAN.md — AdsClient handle lifecycle + AdsHandle RAII + browse + typed methods + barrel exports (wave 2)
+  - [x] 07-04-PLAN.md — dump_golden symbol fixtures (handle req/res, uploadinfo, 2-symbol padded blob) + byte-parity test (wave 2)
+  - [x] 07-05-PLAN.md — AdsClient handle lifecycle + AdsHandle RAII + browse + typed methods + barrel exports (wave 2)
   - [ ] 07-06-PLAN.md — Live integration: handle leak proof + staleness, browse, typed round-trips (wave 3)
 **UI hint**: no
 
@@ -188,6 +188,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 4. AmsRouter & Transport Modes | 4/4 | Complete   | 2026-07-04 |
 | 5. Device Notifications as Streams | 6/6 | Complete   | 2026-07-04 |
 | 6. Sum (Batched) Commands | 6/6 | Complete   | 2026-07-04 |
-| 7. Symbol Access, Browse & Typed Values | 3/6 | In Progress|  |
+| 7. Symbol Access, Browse & Typed Values | 5/6 | In Progress|  |
 | 8. Dart CLI | 0/TBD | Not started | - |
 | 9. Packaging & Publishing | 0/TBD | Not started | - |
