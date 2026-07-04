@@ -48,8 +48,9 @@ class BrowseCommand extends BaseAdsCommand {
           var symbols = await session.client.browseSymbols();
           if (filter != null && filter.isNotEmpty) {
             final re = _globToRegExp(filter);
-            symbols =
-                symbols.where((s) => re.hasMatch(s.name)).toList(growable: false);
+            symbols = symbols
+                .where((s) => re.hasMatch(s.name))
+                .toList(growable: false);
           }
 
           if (asJson) {

@@ -100,8 +100,7 @@ void main() {
 
   test('read --name DOES.NOT.EXIST exits 1 with a human-readable ADS error',
       () async {
-    final result =
-        await runCli(<String>['read', '--name', 'DOES.NOT.EXIST']);
+    final result = await runCli(<String>['read', '--name', 'DOES.NOT.EXIST']);
 
     expect(result.exitCode, 1,
         reason: 'an unknown symbol is an ADS device error (exit 1); '

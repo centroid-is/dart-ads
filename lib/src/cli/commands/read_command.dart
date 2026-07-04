@@ -271,7 +271,8 @@ int _parseAnyInt(String raw, String flag) {
     value = int.tryParse(s);
   }
   if (value == null) {
-    throw FormatException('--$flag must be an integer (decimal or 0x hex)', raw);
+    throw FormatException(
+        '--$flag must be an integer (decimal or 0x hex)', raw);
   }
   return value;
 }
