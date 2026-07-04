@@ -14,7 +14,8 @@ class WriteCommand extends BaseAdsCommand {
     argParser
       ..addOption(
         'name',
-        help: 'Symbol name to write (typed via its symbol type when resolvable).',
+        help:
+            'Symbol name to write (typed via its symbol type when resolvable).',
         valueHelp: 'symbol',
       )
       ..addOption(

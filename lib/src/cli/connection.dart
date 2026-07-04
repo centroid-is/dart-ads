@@ -92,7 +92,7 @@ Future<AdsSession> connectFromGlobals(ArgResults globals) async {
     } else {
       throw UsageException(
         'direct mode needs a source NetId: pass --source <AmsNetId> '
-        '(host "$host" is not a dotted IPv4 to derive <ip>.1.1 from)',
+            '(host "$host" is not a dotted IPv4 to derive <ip>.1.1 from)',
         '',
       );
     }
