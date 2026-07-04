@@ -43,6 +43,14 @@ static const AmsNetId kSource(192, 168, 0, 100, 1, 1);
 static const uint16_t kSourcePort = 40001; // 0x9c41
 static const uint32_t kInvokeId = 1;
 
+// Per-item error sentinel for SUMUP batches — MUST match mock_server.cpp:124.
+// A batch item whose inner indexGroup == kErrResultGroup fails: its result
+// word carries the item's inner indexOffset (a real ADS error code) and it
+// contributes ZERO data bytes. This 0-data-bytes-on-failure convention is the
+// frozen mid-batch-alignment contract shared by mock + Dart decoder + goldens
+// (06-RESEARCH A1).
+static const uint32_t kErrResultGroup = 0xE7700000u;
+
 // ---- Little-endian scalar helpers for building response ADS payloads -------
 // (Responses are not produced by upstream's send path, so their body fields are
 // written as explicit LE scalars; the AMS/TCP + AMS headers still come from the
@@ -277,6 +285,156 @@ int main(int argc, char** argv)
         Frame f = payloadFrame(p);
         ok &= writeHex(dir, "read_write_res",
                  "ReadWrite res: result 0, readLength 4, data 0x80000001",
+                 wrap(f, AoEHeader::READ_WRITE, true));
+    }
+
+    // --- SUMUP_READ 0xF080 (batched read) ----------------------------------
+    // Outer ReadWrite (0x09) to group 0xF080, indexOffset = N = 3 (item count).
+    // Inner write-buffer = 3 x 12B item headers (ig,io,len). Item[1] targets the
+    // per-item error sentinel kErrResultGroup with io=0x703 (ADSERR_DEVICE_
+    // INVALIDOFFSET) so its result word is non-zero and it emits 0 data bytes —
+    // freezing the mid-batch-failure alignment (06-RESEARCH A1).
+    //   item0: ig 0x4020, io 0x10, len 4
+    //   item1: ig kErrResultGroup, io 0x703, len 2  (FAILS -> 0 data bytes)
+    //   item2: ig 0x4020, io 0x20, len 8
+    // req readLength = N*4 + Sum(len) = 12 + (4+2+8) = 26 (upper bound).
+    {
+        std::vector<uint8_t> wbuf;
+        putU32(wbuf, 0x00004020u); putU32(wbuf, 0x00000010u); putU32(wbuf, 4u);
+        putU32(wbuf, kErrResultGroup); putU32(wbuf, 0x00000703u); putU32(wbuf, 2u);
+        putU32(wbuf, 0x00004020u); putU32(wbuf, 0x00000020u); putU32(wbuf, 8u);
+        const uint32_t N = 3;
+        const uint32_t readLength = N * 4 + (4 + 2 + 8); // 26
+        Frame f = payloadFrame({});
+        f.prepend(wbuf.data(), wbuf.size());               // [writeData]
+        const AoEReadWriteReqHeader req(0x0000F080u, N, readLength,
+                                        static_cast<uint32_t>(wbuf.size()));
+        f.prepend<AoEReadWriteReqHeader>(req);             // [rwHdr][writeData]
+        ok &= writeHex(dir, "sum_read_req",
+                 "SUMUP_READ req: group 0xF080, N 3, readLength 26; items "
+                 "[0x4020:0x10 len4] [kErrResultGroup:0x703 len2 (fails)] "
+                 "[0x4020:0x20 len8]",
+                 wrap(f, AoEHeader::READ_WRITE, false));
+    }
+    // res: outer result 0, inner readLength = errRegion(3*4=12) + data(4+0+8=12)
+    //      = 24. errRegion: [0, 0x703, 0]; data: item0 4B then item2 8B (item1
+    //      failed -> contributes 0 bytes). This is the frozen mid-batch failure.
+    {
+        std::vector<uint8_t> p;
+        putU32(p, 0);          // outer ADS result = 0
+        putU32(p, 24);         // inner readLength = sumData.size()
+        // error region (N x u32)
+        putU32(p, 0);          // item0 err = 0
+        putU32(p, 0x00000703u);// item1 err = its inner io (FAILED)
+        putU32(p, 0);          // item2 err = 0
+        // data region (successful items only, at requested lengths)
+        p.push_back(0x11); p.push_back(0x22); p.push_back(0x33); p.push_back(0x44); // item0 4B
+        // item1: 0 data bytes (failed)
+        p.push_back(0xaa); p.push_back(0xbb); p.push_back(0xcc); p.push_back(0xdd);
+        p.push_back(0xee); p.push_back(0xff); p.push_back(0x01); p.push_back(0x02); // item2 8B
+        Frame f = payloadFrame(p);
+        ok &= writeHex(dir, "sum_read_res",
+                 "SUMUP_READ res: result 0, readLength 24; errs [0,0x703,0]; "
+                 "data item0 11223344, item1 (failed, 0B), item2 aabbccddeeff0102",
+                 wrap(f, AoEHeader::READ_WRITE, true));
+    }
+
+    // --- SUMUP_WRITE 0xF081 (batched write) --------------------------------
+    // Outer ReadWrite to group 0xF081, indexOffset = N = 3. Inner write-buffer =
+    // 3 x 12B headers (ig,io,len) THEN concatenated distinct write payloads.
+    //   item0: ig 0x4020, io 0x10, len 4, data deadbeef
+    //   item1: ig 0x4020, io 0x20, len 2, data 1234
+    //   item2: ig 0x4020, io 0x30, len 3, data 556677
+    // req readLength = N*4 = 12 (one result word per item, nothing else back).
+    {
+        std::vector<uint8_t> wbuf;
+        putU32(wbuf, 0x00004020u); putU32(wbuf, 0x00000010u); putU32(wbuf, 4u);
+        putU32(wbuf, 0x00004020u); putU32(wbuf, 0x00000020u); putU32(wbuf, 2u);
+        putU32(wbuf, 0x00004020u); putU32(wbuf, 0x00000030u); putU32(wbuf, 3u);
+        // concatenated write payloads (item order)
+        wbuf.push_back(0xde); wbuf.push_back(0xad); wbuf.push_back(0xbe); wbuf.push_back(0xef);
+        wbuf.push_back(0x12); wbuf.push_back(0x34);
+        wbuf.push_back(0x55); wbuf.push_back(0x66); wbuf.push_back(0x77);
+        const uint32_t N = 3;
+        const uint32_t readLength = N * 4; // 12
+        Frame f = payloadFrame({});
+        f.prepend(wbuf.data(), wbuf.size());
+        const AoEReadWriteReqHeader req(0x0000F081u, N, readLength,
+                                        static_cast<uint32_t>(wbuf.size()));
+        f.prepend<AoEReadWriteReqHeader>(req);
+        ok &= writeHex(dir, "sum_write_req",
+                 "SUMUP_WRITE req: group 0xF081, N 3, readLength 12; items "
+                 "[0x4020:0x10 len4 deadbeef] [0x4020:0x20 len2 1234] "
+                 "[0x4020:0x30 len3 556677]",
+                 wrap(f, AoEHeader::READ_WRITE, false));
+    }
+    // res: outer result 0, inner readLength = N*4 = 12; error region = 3 x u32,
+    //      all 0 (no data region for WRITE).
+    {
+        std::vector<uint8_t> p;
+        putU32(p, 0);   // outer ADS result = 0
+        putU32(p, 12);  // inner readLength = N*4
+        putU32(p, 0);   // item0 err
+        putU32(p, 0);   // item1 err
+        putU32(p, 0);   // item2 err
+        Frame f = payloadFrame(p);
+        ok &= writeHex(dir, "sum_write_res",
+                 "SUMUP_WRITE res: result 0, readLength 12; errs [0,0,0]",
+                 wrap(f, AoEHeader::READ_WRITE, true));
+    }
+
+    // --- SUMUP_READWRITE 0xF082 (batched read-write) -----------------------
+    // Outer ReadWrite to group 0xF082, indexOffset = N = 3. Inner write-buffer =
+    // 3 x 16B headers (ig,io,rLen,wLen) THEN concatenated write payloads.
+    // Item[1] requests rLen 8 but writes only 2 bytes, so the mock reads back
+    // min(rLen, stored)=2 -> its RETURNED length (2) < requested (8), pinning the
+    // returned-length slicing rule.
+    //   item0: ig 0x4020, io 0x10, rLen 4, wLen 4, data 01020304
+    //   item1: ig 0x4020, io 0x20, rLen 8, wLen 2, data aabb   (retLen 2 < 8)
+    //   item2: ig 0x4020, io 0x30, rLen 3, wLen 3, data 778899
+    // req readLength = N*8 + Sum(rLen) = 24 + (4+8+3) = 39.
+    {
+        std::vector<uint8_t> wbuf;
+        putU32(wbuf, 0x00004020u); putU32(wbuf, 0x00000010u); putU32(wbuf, 4u); putU32(wbuf, 4u);
+        putU32(wbuf, 0x00004020u); putU32(wbuf, 0x00000020u); putU32(wbuf, 8u); putU32(wbuf, 2u);
+        putU32(wbuf, 0x00004020u); putU32(wbuf, 0x00000030u); putU32(wbuf, 3u); putU32(wbuf, 3u);
+        // concatenated write payloads (item order)
+        wbuf.push_back(0x01); wbuf.push_back(0x02); wbuf.push_back(0x03); wbuf.push_back(0x04);
+        wbuf.push_back(0xaa); wbuf.push_back(0xbb);
+        wbuf.push_back(0x77); wbuf.push_back(0x88); wbuf.push_back(0x99);
+        const uint32_t N = 3;
+        const uint32_t readLength = N * 8 + (4 + 8 + 3); // 39
+        Frame f = payloadFrame({});
+        f.prepend(wbuf.data(), wbuf.size());
+        const AoEReadWriteReqHeader req(0x0000F082u, N, readLength,
+                                        static_cast<uint32_t>(wbuf.size()));
+        f.prepend<AoEReadWriteReqHeader>(req);
+        ok &= writeHex(dir, "sum_readwrite_req",
+                 "SUMUP_READWRITE req: group 0xF082, N 3, readLength 39; items "
+                 "[0x4020:0x10 rLen4 wLen4 01020304] "
+                 "[0x4020:0x20 rLen8 wLen2 aabb (retLen 2<8)] "
+                 "[0x4020:0x30 rLen3 wLen3 778899]",
+                 wrap(f, AoEHeader::READ_WRITE, false));
+    }
+    // res: outer result 0, inner readLength = errRegion(3*(err+retLen)=24) +
+    //      data(4+2+3=9) = 33. Headers: (0,4)(0,2)(0,3) — item1 returns 2 < the
+    //      requested 8. Data at RETURNED lengths, item order.
+    {
+        std::vector<uint8_t> p;
+        putU32(p, 0);   // outer ADS result = 0
+        putU32(p, 33);  // inner readLength = sumData.size()
+        // error+returnedLength region (N x (err u32, retLen u32))
+        putU32(p, 0); putU32(p, 4); // item0: err 0, retLen 4
+        putU32(p, 0); putU32(p, 2); // item1: err 0, retLen 2 (< requested 8)
+        putU32(p, 0); putU32(p, 3); // item2: err 0, retLen 3
+        // data region at RETURNED lengths
+        p.push_back(0x01); p.push_back(0x02); p.push_back(0x03); p.push_back(0x04); // item0 4B
+        p.push_back(0xaa); p.push_back(0xbb);                                       // item1 2B
+        p.push_back(0x77); p.push_back(0x88); p.push_back(0x99);                    // item2 3B
+        Frame f = payloadFrame(p);
+        ok &= writeHex(dir, "sum_readwrite_res",
+                 "SUMUP_READWRITE res: result 0, readLength 33; headers "
+                 "(0,4)(0,2)(0,3); data item0 01020304, item1 aabb, item2 778899",
                  wrap(f, AoEHeader::READ_WRITE, true));
     }
 
