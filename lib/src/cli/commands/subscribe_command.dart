@@ -136,8 +136,20 @@ class SubscribeCommand extends BaseAdsCommand {
           for (final s in signals) {
             await s.cancel();
           }
+          final hadSubscription = sub != null;
           await sub?.cancel(); // fires DeleteDeviceNotification (Always-Delete)
           await session.close(); // idempotent
+          if (hadSubscription) {
+            // Observable teardown marker: proves the handle-release path ran on
+            // this exit (the CONTEXT's headline no-leak property). The mock's
+            // notification table is connection-scoped, so a fresh connection
+            // cannot observe THIS process's post-teardown handle count — this
+            // marker is the connection-local evidence the integration test
+            // asserts on (the library's same-connection zero-handle proof lives
+            // in test/integration/ads_notification_test.dart).
+            stderr.writeln('subscribe: notification handle released, '
+                'session closed');
+          }
           if (!done.isCompleted) done.complete(exitOk);
         }
 
