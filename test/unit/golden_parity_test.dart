@@ -9,6 +9,7 @@ import 'package:dart_ads/src/protocol/ams_tcp_header.dart';
 import 'package:dart_ads/src/protocol/commands.dart';
 import 'package:dart_ads/src/protocol/constants.dart';
 import 'package:dart_ads/src/protocol/notifications.dart';
+import 'package:dart_ads/src/protocol/sum_commands.dart';
 import 'package:test/test.dart';
 
 import '../support/hex.dart';
@@ -371,6 +372,177 @@ void main() {
       expect(notifications[3].handle, equals(3));
       expect(notifications[3].timestamp, equals(stamp1Ts));
       expect(notifications[3].data, isEmpty);
+    });
+  });
+
+  group('sum batched-command goldens', () {
+    // The exact item lists dump_golden baked into the sum_*.hex fixtures.
+    // kErrResultGroup (0xE7700000) is the mock's per-item error sentinel: the
+    // mid-batch READ item targeting it fails (err 0x703) and — by the frozen
+    // 0-data-bytes-on-failure convention (SUM-04) — emits no data, so items 0
+    // and 2 still land at the correct offsets.
+    const kErrResultGroup = 0xE7700000;
+
+    final readItems = <SumReadRequest>[
+      const SumReadRequest(indexGroup: 0x4020, indexOffset: 0x10, length: 4),
+      const SumReadRequest(
+          indexGroup: kErrResultGroup, indexOffset: 0x703, length: 2),
+      const SumReadRequest(indexGroup: 0x4020, indexOffset: 0x20, length: 8),
+    ];
+    final writeItems = <SumWriteRequest>[
+      SumWriteRequest(
+        indexGroup: 0x4020,
+        indexOffset: 0x10,
+        data: Uint8List.fromList([0xde, 0xad, 0xbe, 0xef]),
+      ),
+      SumWriteRequest(
+        indexGroup: 0x4020,
+        indexOffset: 0x20,
+        data: Uint8List.fromList([0x12, 0x34]),
+      ),
+      SumWriteRequest(
+        indexGroup: 0x4020,
+        indexOffset: 0x30,
+        data: Uint8List.fromList([0x55, 0x66, 0x77]),
+      ),
+    ];
+    final readWriteItems = <SumReadWriteRequest>[
+      SumReadWriteRequest(
+        indexGroup: 0x4020,
+        indexOffset: 0x10,
+        readLength: 4,
+        writeData: Uint8List.fromList([0x01, 0x02, 0x03, 0x04]),
+      ),
+      // item[1] requests 8 bytes back but only 2 are returned — the returned
+      // length (< requested) is what the decoder must slice by.
+      SumReadWriteRequest(
+        indexGroup: 0x4020,
+        indexOffset: 0x20,
+        readLength: 8,
+        writeData: Uint8List.fromList([0xaa, 0xbb]),
+      ),
+      SumReadWriteRequest(
+        indexGroup: 0x4020,
+        indexOffset: 0x30,
+        readLength: 3,
+        writeData: Uint8List.fromList([0x77, 0x88, 0x99]),
+      ),
+    ];
+
+    test('SUMUP_READ request encodes byte-for-byte to the committed golden',
+        () {
+      final (writeBuffer, readLength) = buildSumReadPayload(readItems);
+      final frame = encodeReadWriteRequest(
+        target: _target,
+        source: _source,
+        invokeId: _invokeId,
+        indexGroup: 0xF080,
+        indexOffset: readItems.length,
+        readLength: readLength,
+        writeData: writeBuffer,
+      );
+      expect(frame, equals(readGolden('test/golden/sum_read_req.hex')));
+    });
+
+    test('SUMUP_READ response decodes mid-batch failure with aligned data', () {
+      // Outer envelope (result + readLength) is decoded by the single-source
+      // ReadWrite decoder; the inner sum region feeds the sum decoder.
+      final payload = _adsResponsePayload(
+        readGolden('test/golden/sum_read_res.hex'),
+        AdsCommandId.readWrite,
+      );
+      final rw = decodeReadWriteResponse(payload);
+      expect(rw.result, equals(0));
+
+      final results = decodeSumReadResponse(rw.data, readItems);
+      expect(results, hasLength(3));
+      // item[1] failed (err 0x703) and carries zero data bytes (SUM-04).
+      expect(results[1].errorCode, equals(0x703));
+      expect(results[1].isSuccess, isFalse);
+      expect(results[1].value, isEmpty);
+      // items 0 and 2 still land at the correct offsets despite the mid-batch
+      // failure — the frozen alignment rule pinned by this golden.
+      expect(results[0].isSuccess, isTrue);
+      expect(results[0].value,
+          equals(Uint8List.fromList([0x11, 0x22, 0x33, 0x44])));
+      expect(results[2].isSuccess, isTrue);
+      expect(
+        results[2].value,
+        equals(Uint8List.fromList(
+            [0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01, 0x02])),
+      );
+    });
+
+    test('SUMUP_WRITE request encodes byte-for-byte to the committed golden',
+        () {
+      final (writeBuffer, readLength) = buildSumWritePayload(writeItems);
+      final frame = encodeReadWriteRequest(
+        target: _target,
+        source: _source,
+        invokeId: _invokeId,
+        indexGroup: 0xF081,
+        indexOffset: writeItems.length,
+        readLength: readLength,
+        writeData: writeBuffer,
+      );
+      expect(frame, equals(readGolden('test/golden/sum_write_req.hex')));
+    });
+
+    test('SUMUP_WRITE response decodes all three items as success', () {
+      final payload = _adsResponsePayload(
+        readGolden('test/golden/sum_write_res.hex'),
+        AdsCommandId.readWrite,
+      );
+      final rw = decodeReadWriteResponse(payload);
+      expect(rw.result, equals(0));
+
+      final results = decodeSumWriteResponse(rw.data, writeItems.length);
+      expect(results, hasLength(3));
+      for (final r in results) {
+        expect(r.errorCode, equals(0));
+        expect(r.isSuccess, isTrue);
+      }
+    });
+
+    test(
+        'SUMUP_READWRITE request encodes byte-for-byte to the committed golden',
+        () {
+      final (writeBuffer, readLength) =
+          buildSumReadWritePayload(readWriteItems);
+      final frame = encodeReadWriteRequest(
+        target: _target,
+        source: _source,
+        invokeId: _invokeId,
+        indexGroup: 0xF082,
+        indexOffset: readWriteItems.length,
+        readLength: readLength,
+        writeData: writeBuffer,
+      );
+      expect(frame, equals(readGolden('test/golden/sum_readwrite_req.hex')));
+    });
+
+    test('SUMUP_READWRITE response slices each item by its returned length',
+        () {
+      final payload = _adsResponsePayload(
+        readGolden('test/golden/sum_readwrite_res.hex'),
+        AdsCommandId.readWrite,
+      );
+      final rw = decodeReadWriteResponse(payload);
+      expect(rw.result, equals(0));
+
+      final results =
+          decodeSumReadWriteResponse(rw.data, readWriteItems.length);
+      expect(results, hasLength(3));
+      for (final r in results) {
+        expect(r.errorCode, equals(0));
+      }
+      expect(results[0].value,
+          equals(Uint8List.fromList([0x01, 0x02, 0x03, 0x04])));
+      // item[1] requested 8 bytes but only 2 came back — decoded by the
+      // RETURNED length, never the requested readLength.
+      expect(results[1].value, hasLength(2));
+      expect(results[1].value, equals(Uint8List.fromList([0xaa, 0xbb])));
+      expect(results[2].value, equals(Uint8List.fromList([0x77, 0x88, 0x99])));
     });
   });
 }
