@@ -13,8 +13,11 @@
 ///
 /// The connection is built through an injected [TransportFactory] so the whole
 /// route/port/localAddr algebra is exercised by a `FakeTransport` with no live
-/// sockets. The `connect()` / transport-mode / ERR-02 wiring lands in Plan 04 —
-/// this file deliberately stops at the registry.
+/// sockets. Plan 04 adds [AmsRouter.connect]: it turns a target NetId + a
+/// [TransportTarget] mode into a ready [AdsClient] (source→target addressed),
+/// and — in [DirectTarget] mode ONLY — enriches a request timeout into an
+/// actionable ADS `0x0745`/1861 error naming the source NetId (ERR-02) instead
+/// of a bare timeout.
 ///
 /// Divergence from C++ (documented for the parity tests): the C++ router shares
 /// one refcounted `AmsConnection` across multiple NetIds pointing at the same
@@ -25,13 +28,18 @@
 library;
 
 import 'dart:async';
+import 'dart:typed_data';
 
+import '../client/ads_client.dart';
 import '../connection/ams_connection.dart';
+import '../connection/exceptions.dart';
+import '../protocol/ads_error.dart';
 import '../protocol/ams_net_id.dart';
 import '../protocol/constants.dart';
 import '../transport/socket_transport.dart';
 import '../transport/transport.dart';
 import 'routing_exception.dart';
+import 'transport_target.dart';
 
 /// Builds the [AdsTransport] a new route connects over, given its [host] and
 /// [port]. Defaults to a `dart:io` [SocketTransport]; unit tests inject a
@@ -78,6 +86,11 @@ class AmsRouter {
   /// `ADSERR_CLIENT_PORTNOTOPEN` — [closePort] of an out-of-range or
   /// already-closed local port.
   static const int _adsErrClientPortNotOpen = 0x0748;
+
+  /// `ROUTERERR_NOMOREQUEUES` — all [numPortsMax] local ports are allocated;
+  /// [connect] translates the [openPort] `0` exhaustion sentinel into this typed
+  /// error rather than looping or hanging (threat T-4-01).
+  static const int _routerErrNoMoreQueues = 0x0508;
 
   /// The all-zero default source NetId — "no local address set yet".
   static final AmsNetId _emptyNetId = AmsNetId(List<int>.filled(6, 0));
@@ -207,11 +220,147 @@ class AmsRouter {
   /// set — exposed so callers/tests can recognise the "unset" state.
   static AmsNetId get emptyLocalAddress => _emptyNetId;
 
+  /// Resolves [targetNetId] over the chosen [mode], opens a connection, and
+  /// returns a ready [AdsClient] addressed source→target (ROUTE-01).
+  ///
+  /// The command bodies never change between modes — only the endpoint and the
+  /// routing/error policy differ:
+  ///   * [DirectTarget] dials the device peer directly. The target NetId MUST be
+  ///     in this router's route table (add it with [addRoute] first) or a
+  ///     `0x0007` `GLOBALERR_MISSING_ROUTE` [AdsRoutingException] is thrown
+  ///     BEFORE any socket I/O — never a connect-then-timeout probe. A request
+  ///     that later times out is enriched into an actionable `0x0745`/1861
+  ///     [AdsRoutingException] naming the stamped source NetId (ERR-02); every
+  ///     OTHER error (device errors, disconnects, malformed frames) propagates
+  ///     UNCHANGED so a real fault is never masked as a route problem (T-4-02).
+  ///   * [LocalRouterTarget] dials a local router that owns onward routing, so no
+  ///     route-table entry is required and its timeouts/errors pass through
+  ///     unenriched (a real router returns its own `0x0007`).
+  ///
+  /// A local AMS port (`[30000, 30128)`) is allocated as the SOURCE port; if all
+  /// [numPortsMax] are taken, a `0x0508` `ROUTERERR_NOMOREQUEUES` [AdsException]
+  /// is thrown (T-4-01). The returned client is addressed
+  /// `source = AmsAddr(localAddr, allocatedPort)` →
+  /// `target = AmsAddr(targetNetId, amsPort)`.
+  ///
+  /// The first successful connection lazily auto-derives the router's source
+  /// NetId as `<ip>.1.1` from the socket's local IPv4 (C++ parity) when no
+  /// explicit [setLocalAddress] was made — so a deterministic source NetId on
+  /// the very first direct connection is best obtained by calling
+  /// [setLocalAddress] up front.
+  Future<AdsClient> connect(
+    AmsNetId targetNetId,
+    int amsPort, {
+    required TransportTarget mode,
+  }) async {
+    // Endpoint + direct-mode flag from the sealed transport target. Exhaustive
+    // over the two subtypes (adding a mode is a compile-time prompt here).
+    final (String host, int endpointPort, bool direct) = switch (mode) {
+      DirectTarget(:final deviceHost, :final port) => (deviceHost, port, true),
+      LocalRouterTarget(:final host, :final port) => (host, port, false),
+    };
+
+    // Direct mode: the target NetId must be locally routed — surface a 0x0007
+    // missing-route up front, before any I/O. Local-router mode delegates
+    // routing to the endpoint itself, so no route-table entry is required.
+    if (direct) {
+      resolve(targetNetId); // throws AdsRoutingException.missingRoute (0x0007)
+    }
+
+    // Allocate the local AMS source port. The 0 sentinel means all 128 slots
+    // are taken — translate it into a typed 0x0508 rather than looping (T-4-01).
+    final sourcePort = openPort();
+    if (sourcePort == 0) {
+      throw AdsException.fromCode(_routerErrNoMoreQueues);
+    }
+
+    final transport = _transportFactory(host, endpointPort);
+    final source = AmsAddr(_localAddr, sourcePort);
+    final target = AmsAddr(targetNetId, amsPort);
+
+    // Direct mode wraps the connection so a request timeout — the canonical
+    // symptom of a missing REVERSE route on the target — is rethrown as an
+    // actionable 0x0745 naming the source NetId (ERR-02). Local-router mode uses
+    // a plain connection so its timeouts/errors stay their own family.
+    final AmsConnection connection = direct
+        ? _DirectTimeoutConnection(
+            transport,
+            source: source,
+            target: target,
+            defaultTimeout: _defaultTimeout,
+            sourceNetId: source.netId,
+          )
+        : AmsConnection(
+            transport,
+            source: source,
+            target: target,
+            defaultTimeout: _defaultTimeout,
+          );
+
+    try {
+      await connection.connect(host, endpointPort);
+    } catch (_) {
+      // Release the just-allocated source port so a failed dial never leaks a
+      // slot out of the fixed 128-port range.
+      closePort(sourcePort);
+      rethrow;
+    }
+
+    // First-connection <ip>.1.1 derivation (C++ parity): once the socket is up,
+    // learn the local IPv4 and, if no explicit local address was set, derive the
+    // router's source NetId for SUBSEQUENT connects.
+    final localIp = transport.localAddress;
+    if (_localAddr == _emptyNetId && localIp != null) {
+      _localAddr = AmsNetId.fromIpv4(localIp);
+    }
+
+    return AdsClient(connection, target: target, source: source);
+  }
+
   /// Closes every owned connection and clears the route table (fan-out reuses
   /// the Phase-2 [AmsConnection] disconnect semantics).
   Future<void> close() async {
     final routes = List<_Route>.of(_routes.values);
     _routes.clear();
     await Future.wait(routes.map((r) => r.connection.close()));
+  }
+}
+
+/// A [DirectTarget]-mode [AmsConnection] that enriches a request timeout into an
+/// actionable ERR-02 error.
+///
+/// It overrides [request] to catch ONLY [AdsTimeoutException] — the canonical
+/// symptom of the target lacking a reverse ADS route back to [sourceNetId] — and
+/// rethrows [AdsRoutingException.directTimeout] (`0x0745`/1861), which stays
+/// catchable as the [AdsException] family and names the source NetId plus the
+/// remediation. Every other outcome (a device-error `errorCode` returned in the
+/// record, a disconnect [AdsConnectionException], a synchronous framing throw)
+/// passes through UNCHANGED so a real fault is never masked (threat T-4-02).
+///
+/// Awaiting `super.request` does not delay pipelining: the outbound frame is sent
+/// during the synchronous portion of the base call, before the awaited future.
+class _DirectTimeoutConnection extends AmsConnection {
+  _DirectTimeoutConnection(
+    super.transport, {
+    required super.source,
+    required super.target,
+    required super.defaultTimeout,
+    required this.sourceNetId,
+  });
+
+  /// The source AMS NetId this router stamped — named in the ERR-02 message.
+  final AmsNetId sourceNetId;
+
+  @override
+  Future<({int errorCode, Uint8List payload})> request(
+    int commandId,
+    Uint8List payload, {
+    Duration? timeout,
+  }) async {
+    try {
+      return await super.request(commandId, payload, timeout: timeout);
+    } on AdsTimeoutException {
+      throw AdsRoutingException.directTimeout(sourceNetId);
+    }
   }
 }

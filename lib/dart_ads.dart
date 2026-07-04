@@ -105,7 +105,17 @@ export 'src/client/ads_client.dart' show AdsClient;
 export 'src/client/ads_types.dart' show AdsStateInfo, DeviceInfo;
 
 /// The [AmsRouter] registry: the local-AMS-port allocator (base 30000, 128
-/// slots), the target-NetId → [AmsConnection] route table, and the mutable
-/// source address with `<ip>.1.1` auto-derive. The `TransportFactory` typedef
-/// is its injectable connection seam. (Plan 04 adds the transport-mode targets.)
+/// slots), the target-NetId → [AmsConnection] route table, the mutable source
+/// address with `<ip>.1.1` auto-derive, and `connect()` — which turns a target
+/// NetId + a [TransportTarget] mode into a ready [AdsClient] (ROUTE-01) and
+/// enriches a direct-mode timeout into an actionable `0x0745` error (ERR-02).
+/// The `TransportFactory` typedef is its injectable connection seam.
 export 'src/router/ams_router.dart' show AmsRouter, TransportFactory;
+
+/// The runtime transport-mode strategy: the `sealed` [TransportTarget] and its
+/// two modes — [DirectTarget] (dial the device peer; the target needs a reverse
+/// route) and [LocalRouterTarget] (delegate onward routing to a local TwinCAT
+/// router). Selectable at `router.connect(...)` time with zero command-code
+/// change (ROUTE-01).
+export 'src/router/transport_target.dart'
+    show TransportTarget, DirectTarget, LocalRouterTarget;
