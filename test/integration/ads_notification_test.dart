@@ -276,6 +276,46 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
+  group('hostile Add (oversized cbLength)', () {
+    test(
+        'an Add with cbLength far beyond the frame cap is refused with an ADS '
+        'error; the mock survives and registers nothing', () async {
+      // WR-02 regression: cbLength sizes every later notification-emission
+      // buffer in the mock, so an unguarded 0xFFFFFFFF would make the harness
+      // attempt a 4 GiB allocation on the next trigger (uncaught
+      // std::bad_alloc -> whole mock process dies, wedging the rest of the
+      // run). The mock must instead reject at the ADD dispatch site with
+      // result 0x705 (ADSERR_DEVICE_INVALIDSIZE) and register no handle.
+      final client = await connectClient();
+      final errors = <Object>[];
+
+      final sub = client
+          .subscribe(
+            indexGroup: watchGroup,
+            indexOffset: watchOffset,
+            length: 0xFFFFFFFF,
+            timeout: requestTimeout,
+          )
+          .listen((_) {}, onError: errors.add);
+
+      await waitUntil(() => errors.isNotEmpty,
+          reason: 'the hostile Add was not refused with an error');
+      expect(
+        errors.single,
+        isA<AdsException>().having((e) => e.code, 'code', 0x705),
+        reason: 'the refusal surfaces as ADSERR_DEVICE_INVALIDSIZE',
+      );
+
+      // The mock is still alive and registered nothing — both proven by a
+      // successful in-band handle-count read over the SAME connection.
+      expect(await activeHandleCount(client), 0,
+          reason: 'no handle was allocated for the refused Add');
+
+      await sub.cancel();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   group('transmission modes', () {
     // The mock emits on a Write to a watched region regardless of transmission
     // mode, so both serverOnChange and serverCycle deliver via the live mock

@@ -136,7 +136,11 @@ static const uint32_t kNotifyHostileGroup = 0xE7700004u;
 // 6 + 0xFFFFFFFF would otherwise wrap and cause a heap overread. NOTE: the
 // cap only covers the AMS/TCP `length` field — the per-command payload
 // length fields (WRITE `length`, READ_WRITE `writeLength`) are validated in
-// overflow-free subtraction form at their dispatch sites instead.
+// overflow-free subtraction form at their dispatch sites instead; READ's
+// `length` and ADD_DEVICE_NOTIFICATION's `cbLength` are capped directly
+// against kMaxFrameBytes at theirs (cbLength sizes every later notification
+// allocation, so an uncapped 0xFFFFFFFF would 4-GiB-allocate on emission —
+// WR-02).
 static const uint32_t kMaxFrameBytes = 4 * 1024 * 1024;
 
 // ---- Little-endian scalar helpers for the response ADS payload -------------
@@ -859,6 +863,27 @@ static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN,
                             !getU32(body, bodyLen, 16, maxDelay) ||
                             !getU32(body, bodyLen, 20, cycleTime)) {
                             break; // malformed/short: no response
+                        }
+                        // Cap cbLength (WR-02): it sizes EVERY later emission
+                        // buffer (write-trigger + burst paths), so a hostile
+                        // 0xFFFFFFFF would std::bad_alloc a 4 GiB vector on
+                        // the next trigger and kill the whole harness — and
+                        // even a "successful" giant frame would exceed the
+                        // Dart assembler's 4 MiB cap and poison the client
+                        // connection. Reject WITH a real ADS error (result
+                        // 0x705 ADSERR_DEVICE_INVALIDSIZE, handle 0, nothing
+                        // registered) so the client fails fast instead of
+                        // timing out on silence.
+                        if (cbLength > kMaxFrameBytes) {
+                            std::vector<uint8_t> p;
+                            putU32(p, 0x705u); // ADSERR_DEVICE_INVALIDSIZE
+                            putU32(p, 0u);     // no handle assigned
+                            Frame f(p.size(), p.data());
+                            res = wrapResponse(f, AoEHeader::ADD_DEVICE_NOTIFICATION,
+                                               rTarget, rTargetPort, rSource,
+                                               rSourcePort, rInvoke);
+                            haveRes = true;
+                            break;
                         }
                         const uint32_t handle = nextHandle++;
                         notes[handle] = { group, offset, cbLength, transMode };
