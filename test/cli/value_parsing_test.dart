@@ -63,8 +63,8 @@ void main() {
     });
 
     test('bool is case-insensitive on type name', () {
-      expect(encodeTypedValue('BOOL', 'false'),
-          equals(Uint8List.fromList([0])));
+      expect(
+          encodeTypedValue('BOOL', 'false'), equals(Uint8List.fromList([0])));
     });
 
     test('dint -5 -> 4 LE bytes', () {
@@ -112,7 +112,8 @@ void main() {
     });
 
     test('real notanumber -> FormatException', () {
-      expect(() => encodeTypedValue('real', 'notanumber'), throwsFormatException);
+      expect(
+          () => encodeTypedValue('real', 'notanumber'), throwsFormatException);
     });
 
     test('bogus type -> FormatException', () {
@@ -140,18 +141,18 @@ void main() {
     });
 
     test('short buffer -> FormatException (lreal needs 8)', () {
-      expect(() => decodeTypedValue('lreal', Uint8List(4)),
-          throwsFormatException);
+      expect(
+          () => decodeTypedValue('lreal', Uint8List(4)), throwsFormatException);
     });
 
     test('empty buffer -> FormatException (word needs 2)', () {
-      expect(() => decodeTypedValue('word', Uint8List(0)),
-          throwsFormatException);
+      expect(
+          () => decodeTypedValue('word', Uint8List(0)), throwsFormatException);
     });
 
     test('bogus type -> FormatException', () {
-      expect(() => decodeTypedValue('bogus', Uint8List(4)),
-          throwsFormatException);
+      expect(
+          () => decodeTypedValue('bogus', Uint8List(4)), throwsFormatException);
     });
   });
 
