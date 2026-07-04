@@ -443,5 +443,57 @@ void main() {
       // A subsequent op on the invalidated handle throws StateError (no reuse).
       expect(() => handle.read(4), throwsA(isA<StateError>()));
     });
+
+    test(
+        'a failed release does not latch closed — retry close() releases '
+        '(WR-01)', () async {
+      final (client, fake) = await newClient();
+      final createF = AdsHandle.create(client, 'MAIN.v');
+      await pumpEventQueue();
+      reply(fake, AdsCommandId.readWrite, readPayload(data: u32le(0xCD)));
+      final handle = await createF;
+
+      // First close: the device rejects the release with a generic error.
+      final closeF = handle.close();
+      await pumpEventQueue();
+      reply(fake, AdsCommandId.write, writePayload(result: 0x700));
+      await expectLater(closeF, throwsA(isA<AdsException>()));
+      // NOT latched closed: the handle is still releasable through the wrapper.
+      expect(handle.isValid, isTrue);
+
+      // Retry close: this time the release succeeds and the state latches.
+      final retryF = handle.close();
+      await pumpEventQueue();
+      reply(fake, AdsCommandId.write, writePayload());
+      await retryF;
+      expect(handle.isValid, isFalse);
+      // resolve + failed release + successful release = 3 frames.
+      expect(fake.written, hasLength(3));
+
+      // Idempotent after success: nothing more hits the wire.
+      await handle.close();
+      expect(fake.written, hasLength(3));
+    });
+
+    test('a 0x710 during close() treats the handle as closed — no rethrow',
+        () async {
+      final (client, fake) = await newClient();
+      final createF = AdsHandle.create(client, 'MAIN.v');
+      await pumpEventQueue();
+      reply(fake, AdsCommandId.readWrite, readPayload(data: u32le(0xCE)));
+      final handle = await createF;
+
+      // The symbol table was reloaded underneath us: release answers 0x710.
+      // The device handle no longer exists, so close() completes quietly.
+      final closeF = handle.close();
+      await pumpEventQueue();
+      reply(fake, AdsCommandId.write, writePayload(result: 0x0710));
+      await closeF;
+      expect(handle.isValid, isFalse);
+
+      // Latched: a retry writes nothing more.
+      await handle.close();
+      expect(fake.written, hasLength(2));
+    });
   });
 }

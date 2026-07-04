@@ -48,6 +48,7 @@ class AdsHandle {
 
   var _valid = true;
   var _closed = false;
+  var _closing = false;
 
   /// Whether this handle is still usable — resolved, not closed, and not
   /// invalidated by a stale-handle error.
@@ -79,14 +80,39 @@ class AdsHandle {
     }
   }
 
-  /// Releases the handle exactly once. Idempotent — a second [close] is a no-op.
-  /// An already-invalidated handle is not released on the wire (the device
-  /// handle is already gone), it is simply marked closed.
+  /// Releases the handle exactly once. Idempotent — a second [close] after a
+  /// SUCCESSFUL close is a no-op. An already-invalidated handle is not released
+  /// on the wire (the device handle is already gone), it is simply marked
+  /// closed.
+  ///
+  /// The closed state latches only when the release actually succeeds (or when
+  /// a stale-handle error `0x710`/`0x711` proves the device handle no longer
+  /// exists, making a release meaningless). If the release fails for any other
+  /// reason (timeout, connection loss, device error) the exception propagates
+  /// and the handle stays closable — a retry [close] re-attempts the release
+  /// instead of silently leaking the device handle (T-7-01).
   Future<void> close({Duration? timeout}) async {
-    if (_closed) return;
-    _closed = true;
-    if (!_valid) return;
-    await _client.releaseHandle(handle, timeout: timeout);
+    if (_closed || _closing) return;
+    if (!_valid) {
+      _closed = true;
+      return;
+    }
+    _closing = true;
+    try {
+      await _client.releaseHandle(handle, timeout: timeout);
+      _closed = true;
+    } on AdsException catch (e) {
+      if (e.code == 0x0710 || e.code == 0x0711) {
+        // Stale handle: the device-side handle is already gone, so there is
+        // nothing left to release — treat the close as complete.
+        _valid = false;
+        _closed = true;
+        return;
+      }
+      rethrow;
+    } finally {
+      _closing = false;
+    }
   }
 
   void _ensureUsable() {
