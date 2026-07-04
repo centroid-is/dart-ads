@@ -39,14 +39,15 @@ void main() {
     await conn.connect('127.0.0.1', server.port);
     expect(conn.isConnected, isTrue);
 
-    // ReadDeviceInfo carries an empty ADS payload.
-    final payload = await conn.request(
+    // ReadDeviceInfo carries an empty ADS payload. request() now resolves to a
+    // record; the decoder takes the payload slice.
+    final resp = await conn.request(
       AdsCommandId.readDeviceInfo,
       Uint8List(0),
     );
 
     // A real frame traversed SocketTransport -> FrameAssembler -> correlation.
-    final info = decodeReadDeviceInfoResponse(payload);
+    final info = decodeReadDeviceInfoResponse(resp.payload);
     expect(info.name, equals('Dart ADS Mock'));
 
     await conn.close();
@@ -57,11 +58,11 @@ void main() {
     await conn.connect('127.0.0.1', server.port);
 
     // Do a real round-trip first so close() tears down a live, used connection.
-    final payload = await conn.request(
+    final resp = await conn.request(
       AdsCommandId.readDeviceInfo,
       Uint8List(0),
     );
-    expect(decodeReadDeviceInfoResponse(payload).name, isNotEmpty);
+    expect(decodeReadDeviceInfoResponse(resp.payload).name, isNotEmpty);
     expect(conn.isConnected, isTrue);
 
     await conn.close();
