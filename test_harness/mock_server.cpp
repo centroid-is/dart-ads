@@ -849,6 +849,184 @@ static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN,
                             static_cast<size_t>(writeLength) > bodyLen - 16) {
                             break; // malformed/hostile
                         }
+                        // --- SUMUP sub-handler (0xF080 / 0xF081 / 0xF082) ----
+                        // Batched Read / Write / ReadWrite. The outer
+                        // indexOffset carries the item count N; the write-
+                        // buffer holds N per-item headers (12B for READ/WRITE,
+                        // 16B for READWRITE) optionally followed by concatenated
+                        // write payloads. We replay the per-connection `store`
+                        // per item and reuse kErrResultGroup as the per-item
+                        // error sentinel (the whole-frame magic trick applied
+                        // per item — see the magic intercept at the top of the
+                        // dispatch loop).
+                        //
+                        // FROZEN CONTRACT (Phase 9 parity audit note): a failed
+                        // item — one whose inner indexGroup == kErrResultGroup —
+                        // still occupies its result-word slot but contributes
+                        // ZERO data bytes. This 0-data-bytes-on-failure
+                        // convention is shared VERBATIM with the Dart sum decoder
+                        // and the golden fixtures; the mock's emission IS the
+                        // specification (06-RESEARCH A1). Do NOT change the
+                        // mid-batch alignment without updating decoder + goldens
+                        // together.
+                        if (group == 0xF080u || group == 0xF081u ||
+                            group == 0xF082u) {
+                            const uint32_t N = offset;
+                            const uint8_t* wbuf = body + 16; // write-buffer start
+                            const size_t stride =
+                                (group == 0xF082u) ? 16u : 12u;
+                            // Header region must fit inside the write-buffer.
+                            // Overflow-free (never N*stride in a size_t that can
+                            // wrap): promote to uint64_t. Validate N against the
+                            // write-buffer size (T-6-01); mismatch => break, no
+                            // response, mirroring the hostile-input discipline.
+                            const uint64_t hdrBytes =
+                                static_cast<uint64_t>(N) * stride;
+                            if (hdrBytes > writeLength) {
+                                break; // N inconsistent with write-buffer size
+                            }
+                            std::vector<uint8_t> errRegion;  // per-item err[,len]
+                            std::vector<uint8_t> dataRegion; // concatenated data
+                            uint64_t total = 0; // response-size cap (T-6-02)
+                            uint64_t wcursor = hdrBytes; // write-payload cursor
+                            bool ok = true;
+                            for (uint32_t i = 0; i < N && ok; ++i) {
+                                const size_t itemOff =
+                                    16 + static_cast<size_t>(i) * stride;
+                                uint32_t ig = 0, io = 0, a = 0, b = 0;
+                                if (group == 0xF082u) {
+                                    if (!getU32(body, bodyLen, itemOff, ig) ||
+                                        !getU32(body, bodyLen, itemOff + 4, io) ||
+                                        !getU32(body, bodyLen, itemOff + 8, a) ||
+                                        !getU32(body, bodyLen, itemOff + 12, b)) {
+                                        ok = false;
+                                        break; // header overruns write-buffer
+                                    }
+                                } else {
+                                    if (!getU32(body, bodyLen, itemOff, ig) ||
+                                        !getU32(body, bodyLen, itemOff + 4, io) ||
+                                        !getU32(body, bodyLen, itemOff + 8, a)) {
+                                        ok = false;
+                                        break;
+                                    }
+                                }
+                                const bool magic = (ig == kErrResultGroup);
+                                if (group == 0xF080u) {
+                                    // READ: err word, then `a` bytes of data
+                                    // (0 bytes on a per-item failure).
+                                    putU32(errRegion, magic ? io : 0u);
+                                    if (!magic) {
+                                        if (static_cast<uint64_t>(a) >
+                                                kMaxFrameBytes ||
+                                            total + a > kMaxFrameBytes) {
+                                            ok = false;
+                                            break; // oversized batch (T-6-02)
+                                        }
+                                        std::vector<uint8_t> d(a, 0);
+                                        const auto it = store.find({ ig, io });
+                                        if (it != store.end()) {
+                                            const size_t ncopy = std::min(
+                                                static_cast<size_t>(a),
+                                                it->second.size());
+                                            std::copy(it->second.begin(),
+                                                      it->second.begin() + ncopy,
+                                                      d.begin());
+                                        }
+                                        total += a;
+                                        dataRegion.insert(dataRegion.end(),
+                                                          d.begin(), d.end());
+                                    }
+                                } else if (group == 0xF081u) {
+                                    // WRITE: consume `a` write-payload bytes;
+                                    // store the slice (write-back) on success.
+                                    if (static_cast<uint64_t>(a) >
+                                            writeLength - wcursor) {
+                                        ok = false;
+                                        break; // payload overruns write-buffer
+                                    }
+                                    if (!magic) {
+                                        store[{ ig, io }] =
+                                            std::vector<uint8_t>(
+                                                wbuf + wcursor,
+                                                wbuf + wcursor + a);
+                                    }
+                                    wcursor += a;
+                                    putU32(errRegion, magic ? io : 0u);
+                                } else { // 0xF082 READWRITE
+                                    // Consume `b` write bytes; store on success,
+                                    // read back min(readLen a, stored) — the
+                                    // RETURNED length equals the bytes actually
+                                    // produced (may be < the requested readLen).
+                                    if (static_cast<uint64_t>(b) >
+                                            writeLength - wcursor) {
+                                        ok = false;
+                                        break;
+                                    }
+                                    uint32_t retLen = 0;
+                                    std::vector<uint8_t> d;
+                                    if (!magic) {
+                                        store[{ ig, io }] =
+                                            std::vector<uint8_t>(
+                                                wbuf + wcursor,
+                                                wbuf + wcursor + b);
+                                        const auto& stored = store[{ ig, io }];
+                                        const size_t ncopy = std::min(
+                                            static_cast<size_t>(a),
+                                            stored.size());
+                                        d.assign(stored.begin(),
+                                                 stored.begin() + ncopy);
+                                        retLen =
+                                            static_cast<uint32_t>(ncopy);
+                                    }
+                                    wcursor += b;
+                                    putU32(errRegion, magic ? io : 0u);
+                                    putU32(errRegion, retLen);
+                                    if (total + retLen > kMaxFrameBytes) {
+                                        ok = false;
+                                        break; // oversized batch (T-6-02)
+                                    }
+                                    total += retLen;
+                                    dataRegion.insert(dataRegion.end(),
+                                                      d.begin(), d.end());
+                                }
+                            }
+                            // The write payloads must consume the buffer EXACTLY.
+                            // READ (0xF080) has no trailing payload region, so
+                            // its headers must fill the write-buffer exactly;
+                            // WRITE/READWRITE must land wcursor at writeLength.
+                            if (ok && group == 0xF080u &&
+                                hdrBytes != writeLength) {
+                                ok = false;
+                            }
+                            if (ok && group != 0xF080u &&
+                                wcursor != writeLength) {
+                                ok = false;
+                            }
+                            if (!ok) {
+                                break; // inconsistent input: NO response
+                            }
+                            std::vector<uint8_t> sumData;
+                            sumData.reserve(errRegion.size() +
+                                            dataRegion.size());
+                            sumData.insert(sumData.end(), errRegion.begin(),
+                                           errRegion.end());
+                            sumData.insert(sumData.end(), dataRegion.begin(),
+                                           dataRegion.end());
+                            if (sumData.size() > kMaxFrameBytes) {
+                                break; // response too large (T-6-02)
+                            }
+                            std::vector<uint8_t> p;
+                            putU32(p, 0); // outer ADS result = 0 (success)
+                            putU32(p, static_cast<uint32_t>(
+                                          sumData.size())); // inner readLength
+                            p.insert(p.end(), sumData.begin(), sumData.end());
+                            Frame f(p.size(), p.data());
+                            res = wrapResponse(f, AoEHeader::READ_WRITE, rTarget,
+                                               rTargetPort, rSource, rSourcePort,
+                                               rInvoke);
+                            haveRes = true;
+                            break;
+                        }
                         // Write-then-read the SAME key.
                         store[{ group, offset }] = std::vector<uint8_t>(
                             body + 16, body + 16 + writeLength);
