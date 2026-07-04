@@ -23,6 +23,14 @@
 //   --coalesce     buffer two response frames and emit them in a SINGLE send(),
 //                  so two frames arrive in one TCP segment — exercises the
 //                  FrameAssembler's ability to split coalesced frames (TEST-04).
+//                  NOTE (WR-04): 0x08 notification frames are EXEMPT from the
+//                  coalesce buffer — any buffered response is flushed first
+//                  (preserving wire order), then the notification goes out in
+//                  its own send(). The two-at-a-time flush heuristic assumes
+//                  same-size response frames; buffering heterogeneous
+//                  notification frames could strand a response the client is
+//                  awaiting (deadlock). --coalesce cannot be combined with
+//                  --notify-burst (rejected at argv parse, exit 2).
 //   --delay-ms N   DEFER the first response of a connection and flush it LAST
 //                  (after usleep(N ms)); responses #2..N go out immediately. An
 //                  inline pre-send sleep does NOT reorder (the mock answers
@@ -33,6 +41,13 @@
 //                  answering it, so the Dart client is left with at least one
 //                  pending request that must fan out with a connection error
 //                  (TRANS-03). Deterministic, thread-free mid-request disconnect.
+//   --notify-burst N on each successful AddDeviceNotification, emit the Add
+//                  response AND N single-sample 0x08 frames for the new handle
+//                  in ONE send(), so they provably share one inbound TCP chunk
+//                  (the deterministic first-listen-race fixture, WR-03).
+//                  INCOMPATIBLE with --fragment/--coalesce/--delay-ms — those
+//                  reshape the promised single chunk, so the combination is
+//                  rejected at argv parse with exit 2 (WR-04).
 //   --selftest [p] build the canned ReadDeviceInfo response in-process and
 //                  compare it byte-for-byte against the committed golden
 //                  (default p = test/golden/read_device_info_res.hex). Prints OK
@@ -375,6 +390,8 @@ static void sendResponse(int fd, const std::vector<uint8_t>& frame, TransmitMode
         // Flush once two frames are buffered, so both land in one segment.
         // (A trailing single frame is flushed by the caller after the loop.)
         // Heuristic: flush when buffer holds at least two ReadDeviceInfo frames.
+        // Sound ONLY for streams of same-size RESPONSE frames — notification
+        // frames never route here (sendNotificationFrame exempts them, WR-04).
         if (coalesceBuf.size() >= frame.size() * 2) {
             sendAll(fd, coalesceBuf.data(), coalesceBuf.size());
             coalesceBuf.clear();
@@ -442,6 +459,32 @@ static std::vector<uint8_t> buildNotificationFrame(
                         rSource, rSourcePort, 0);
 }
 
+// Send one unsolicited 0x08 frame, EXEMPT from --coalesce buffering (WR-04).
+//
+// The coalesce flush heuristic (flush at >= 2x the current frame's size) was
+// written in Phase 1 for streams of same-size response frames. Notification
+// frames are heterogeneous: routing them through the buffer can leave a
+// RESPONSE below the flush threshold — stranded until connection close while
+// the Dart client awaits it (deadlock). So under Coalesce any buffered frame
+// is flushed FIRST (preserving wire order: the response precedes the
+// notification it logically triggered... or vice versa, whichever was queued),
+// then the notification goes out in its own send(). --fragment still applies:
+// segmenting an unsolicited frame is a legitimate reassembly exercise.
+static void sendNotificationFrame(int fd, const std::vector<uint8_t>& frame,
+                                  TransmitMode mode, size_t fragmentN,
+                                  std::vector<uint8_t>& coalesceBuf)
+{
+    if (mode == TransmitMode::Coalesce) {
+        if (!coalesceBuf.empty()) {
+            sendAll(fd, coalesceBuf.data(), coalesceBuf.size());
+            coalesceBuf.clear();
+        }
+        sendAll(fd, frame.data(), frame.size());
+        return;
+    }
+    sendResponse(fd, frame, mode, fragmentN, coalesceBuf);
+}
+
 static void emitNotification(int fd, TransmitMode mode, size_t fragmentN,
                              std::vector<uint8_t>& coalesceBuf,
                              const AmsNetId& rTarget, uint16_t rTargetPort,
@@ -450,7 +493,7 @@ static void emitNotification(int fd, TransmitMode mode, size_t fragmentN,
 {
     const std::vector<uint8_t> frame = buildNotificationFrame(
         rTarget, rTargetPort, rSource, rSourcePort, stamps);
-    sendResponse(fd, frame, mode, fragmentN, coalesceBuf);
+    sendNotificationFrame(fd, frame, mode, fragmentN, coalesceBuf);
 }
 
 // Emit ONE deliberately MALFORMED 0x08 notification frame. The AMS/TCP wrapper is
@@ -485,7 +528,7 @@ static void emitHostileNotification(int fd, TransmitMode mode, size_t fragmentN,
     std::vector<uint8_t> frame =
         wrapResponse(f, AoEHeader::DEVICE_NOTIFICATION, rTarget, rTargetPort,
                      rSource, rSourcePort, 0);
-    sendResponse(fd, frame, mode, fragmentN, coalesceBuf);
+    sendNotificationFrame(fd, frame, mode, fragmentN, coalesceBuf);
 }
 
 // ---- Live accept loop (built in Phase 1; exercised over a socket in Phase 2) -
