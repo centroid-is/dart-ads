@@ -295,6 +295,87 @@ void main() {
       expect(conn.isConnected, isTrue);
     });
 
+    test(
+        'recycled handle: a stale Delete continuation must not close a NEW '
+        'subscription mapped under the same handle in the same chunk (CR-01)',
+        () async {
+      final fake = FakeTransport();
+      final conn = newConnection(fake);
+      await conn.connect('fake', 0);
+
+      const handle = 0x77;
+
+      // Subscription A acquires the handle.
+      final ctrlA = StreamController<AdsNotification>();
+      final addAFut = conn.addNotification(anyAddPayload(), ctrlA);
+      final addAId = outboundInvokeId(fake.written.single);
+      fake.feed(buildFrame(
+        invokeId: addAId,
+        commandId: AdsCommandId.addDeviceNotification,
+        payload: addResp(result: 0, handle: handle),
+      ));
+      await addAFut;
+
+      // Pipeline Delete(A) then Add(B) with no await in between; the server
+      // frees the handle and (legitimately) RECYCLES it for B.
+      final ctrlB = StreamController<AdsNotification>();
+      final receivedB = <AdsNotification>[];
+      ctrlB.stream.listen(receivedB.add);
+      final delFut = conn.deleteNotification(
+        handle,
+        buildDeleteNotificationPayload(handle: handle),
+      );
+      final addBFut = conn.addNotification(anyAddPayload(), ctrlB);
+      final delId = outboundInvokeId(fake.written[1]);
+      final addBId = outboundInvokeId(fake.written[2]);
+
+      // Coalesce the Delete response and B's Add response (reusing the SAME
+      // handle) into ONE inbound chunk. Both frames are dispatched in one
+      // synchronous drain: the Add hook maps handle→ctrlB BEFORE the Delete's
+      // await continuation runs, so an unguarded post-await
+      // `_demuxControllers.remove(handle)` would remove and close ctrlB —
+      // the exact CR-01 failure. The identity guard must leave B untouched.
+      final delRespFrame = buildFrame(
+        invokeId: delId,
+        commandId: AdsCommandId.deleteDeviceNotification,
+        payload: deleteResp(),
+      );
+      final addBRespFrame = buildFrame(
+        invokeId: addBId,
+        commandId: AdsCommandId.addDeviceNotification,
+        payload: addResp(result: 0, handle: handle),
+      );
+      final chunk = Uint8List(delRespFrame.length + addBRespFrame.length)
+        ..setRange(0, delRespFrame.length, delRespFrame)
+        ..setRange(delRespFrame.length,
+            delRespFrame.length + addBRespFrame.length, addBRespFrame);
+      fake.feed(chunk);
+
+      await delFut;
+      expect(await addBFut, handle);
+
+      expect(ctrlA.isClosed, isTrue,
+          reason: 'the Delete closes the OLD subscription it concerned');
+      expect(ctrlB.isClosed, isFalse,
+          reason:
+              'the stale Delete continuation must not close the NEW (recycled-'
+              'handle) subscription (CR-01)');
+
+      // The recycled-handle subscription still receives.
+      fake.feed(notifFrame(notifStream([
+        (
+          timestamp: ts,
+          samples: [
+            (handle: handle, data: Uint8List.fromList([0x42]))
+          ],
+        ),
+      ])));
+      await pump();
+      expect(receivedB.map((n) => n.data.single), [0x42],
+          reason: 'notifications for the recycled handle route to B');
+      expect(conn.droppedNotifications, 0);
+    });
+
     test('does not throw spuriously against a live connection', () async {
       final fake = FakeTransport();
       final conn = newConnection(fake);

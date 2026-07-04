@@ -262,17 +262,31 @@ class AmsConnection {
     Uint8List payload, {
     Duration? timeout,
   }) async {
+    // IDENTITY-GUARDED removal (CR-01): capture the controller this Delete
+    // concerns BEFORE the round-trip. [addNotification] maps its controller
+    // SYNCHRONOUSLY (in the onResponseSync hook, inside _onFrame), but this
+    // method's removal runs in an await continuation — one microtask AFTER the
+    // whole inbound chunk has drained. If the server recycles [handle] for a
+    // pipelined Add whose response shares the Delete-response's TCP chunk, the
+    // new controller is already mapped by the time this continuation runs; an
+    // unguarded `remove(handle)` would remove and close the NEW subscription's
+    // controller (silent data loss). Removing only when the mapped controller
+    // is still `identical` to the captured one makes the stale continuation a
+    // no-op for the recycled handle.
+    final victim = _demuxControllers[handle];
     await request(
       AdsCommandId.deleteDeviceNotification,
       payload,
       timeout: timeout,
     );
+    if (identical(_demuxControllers[handle], victim)) {
+      _demuxControllers.remove(handle);
+    }
     // Fire-and-forget the close: a single-subscription controller with no live
     // listener only completes its close() future once listened, so awaiting it
     // here could hang. The stream is done regardless; the caller does not need
     // to observe teardown completion.
-    unawaited(
-        _demuxControllers.remove(handle)?.close() ?? Future<void>.value());
+    unawaited(victim?.close() ?? Future<void>.value());
   }
 
   /// Allocates the next monotonic u32 invoke-ID, wrapping `0xFFFFFFFF → 1` and
