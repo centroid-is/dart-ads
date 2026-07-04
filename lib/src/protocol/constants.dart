@@ -143,88 +143,93 @@ abstract final class AdsDeviceDataOffset {
 
 /// ADS device run states (`adsState` u16 in ReadState / WriteControl).
 ///
-/// Source: `enum ADSSTATE` in `AdsDef.h`.
-abstract final class AdsState {
-  AdsState._();
-
-  static const int invalid = 0;
-  static const int idle = 1;
-  static const int reset = 2;
-  static const int init = 3;
-  static const int start = 4;
-  static const int run = 5;
-  static const int stop = 6;
-  static const int saveConfig = 7;
-  static const int loadConfig = 8;
-  static const int powerFailure = 9;
-  static const int powerGood = 10;
-  static const int error = 11;
-  static const int shutdown = 12;
-  static const int suspend = 13;
-  static const int resume = 14;
-  static const int config = 15;
-  static const int reconfig = 16;
-}
-
-/// ADS error codes carried in a response's `result u32` / the AMS header's
-/// `errorCode u32`.
+/// Source: `enum ADSSTATE` in `AdsDef.h` (values 0..19; `ADSSTATE_MAXSTATES`
+/// (20) is a sentinel and is intentionally omitted). Each member carries its
+/// wire [code]; use [AdsState.fromCode] to map a raw u16 back to a member.
 ///
-/// Source: `ADSERR_*` in `AdsDef.h`. `ERR_ADSERRS` (0x0700) is the device-error
-/// base; only the commonly-encountered codes are transcribed here.
-abstract final class AdsError {
-  AdsError._();
+/// A real PLC can report a value outside this list, so [fromCode] is tolerant:
+/// it returns [AdsState.unknown] for any unrecognised value rather than
+/// throwing. `AdsState.unknown` carries the sentinel [code] `-1` (never a valid
+/// wire value) so it can never collide with a real state.
+enum AdsState {
+  /// `ADSSTATE_INVALID`.
+  invalid(0),
 
-  /// Base offset for device ADS errors (`ERR_ADSERRS`).
-  static const int adsErrorBase = 0x0700;
+  /// `ADSSTATE_IDLE`.
+  idle(1),
 
-  /// No error (`ADSERR_NOERR`).
-  static const int noError = 0x00;
+  /// `ADSSTATE_RESET`.
+  reset(2),
 
-  /// Error class: device error (`ADSERR_DEVICE_ERROR`).
-  static const int deviceError = 0x00 + adsErrorBase;
+  /// `ADSSTATE_INIT`.
+  init(3),
 
-  /// Service not supported by server (`ADSERR_DEVICE_SRVNOTSUPP`).
-  static const int serviceNotSupported = 0x01 + adsErrorBase;
+  /// `ADSSTATE_START`.
+  start(4),
 
-  /// Invalid index group (`ADSERR_DEVICE_INVALIDGRP`).
-  static const int invalidIndexGroup = 0x02 + adsErrorBase;
+  /// `ADSSTATE_RUN`.
+  run(5),
 
-  /// Invalid index offset (`ADSERR_DEVICE_INVALIDOFFSET`).
-  static const int invalidIndexOffset = 0x03 + adsErrorBase;
+  /// `ADSSTATE_STOP`.
+  stop(6),
 
-  /// Reading/writing not permitted (`ADSERR_DEVICE_INVALIDACCESS`).
-  static const int invalidAccess = 0x04 + adsErrorBase;
+  /// `ADSSTATE_SAVECFG`.
+  saveConfig(7),
 
-  /// Parameter size not correct (`ADSERR_DEVICE_INVALIDSIZE`).
-  static const int invalidSize = 0x05 + adsErrorBase;
+  /// `ADSSTATE_LOADCFG`.
+  loadConfig(8),
 
-  /// Invalid parameter value(s) (`ADSERR_DEVICE_INVALIDDATA`).
-  static const int invalidData = 0x06 + adsErrorBase;
+  /// `ADSSTATE_POWERFAILURE`.
+  powerFailure(9),
 
-  /// Device not in a ready state (`ADSERR_DEVICE_NOTREADY`).
-  static const int notReady = 0x07 + adsErrorBase;
+  /// `ADSSTATE_POWERGOOD`.
+  powerGood(10),
 
-  /// Device is busy (`ADSERR_DEVICE_BUSY`).
-  static const int busy = 0x08 + adsErrorBase;
+  /// `ADSSTATE_ERROR`.
+  error(11),
 
-  /// Out of memory (`ADSERR_DEVICE_NOMEMORY`).
-  static const int noMemory = 0x0A + adsErrorBase;
+  /// `ADSSTATE_SHUTDOWN`.
+  shutdown(12),
 
-  /// Not found (files, ...) (`ADSERR_DEVICE_NOTFOUND`).
-  static const int notFound = 0x0C + adsErrorBase;
+  /// `ADSSTATE_SUSPEND`.
+  suspend(13),
 
-  /// Symbol not found (`ADSERR_DEVICE_SYMBOLNOTFOUND`).
-  static const int symbolNotFound = 0x10 + adsErrorBase;
+  /// `ADSSTATE_RESUME`.
+  resume(14),
 
-  /// Server is in an invalid state (`ADSERR_DEVICE_INVALIDSTATE`).
-  static const int invalidState = 0x12 + adsErrorBase;
+  /// `ADSSTATE_CONFIG`.
+  config(15),
 
-  /// Notification handle is invalid (`ADSERR_DEVICE_NOTIFYHNDINVALID`).
-  static const int notificationHandleInvalid = 0x14 + adsErrorBase;
+  /// `ADSSTATE_RECONFIG`.
+  reconfig(16),
 
-  /// Device has a timeout (`ADSERR_DEVICE_TIMEOUT`).
-  static const int timeout = 0x19 + adsErrorBase;
+  /// `ADSSTATE_STOPPING`.
+  stopping(17),
 
-  /// Access denied (`ADSERR_DEVICE_ACCESSDENIED`).
-  static const int accessDenied = 0x23 + adsErrorBase;
+  /// `ADSSTATE_INCOMPATIBLE`.
+  incompatible(18),
+
+  /// `ADSSTATE_EXCEPTION`.
+  exception(19),
+
+  /// Tolerant fallback for a wire value outside the known 0..19 range. Carries
+  /// the sentinel [code] `-1`, which is never a valid u16 wire value.
+  unknown(-1);
+
+  const AdsState(this.code);
+
+  /// The u16 wire value for this state (or `-1` for [unknown]).
+  final int code;
+
+  /// Maps a raw wire [code] to its [AdsState] member, or [AdsState.unknown] for
+  /// any unrecognised value. Never throws — a hostile / future state value
+  /// surfaces as [unknown] rather than crashing decode (research Pitfall 4).
+  static AdsState fromCode(int code) {
+    for (final state in values) {
+      if (state != unknown && state.code == code) {
+        return state;
+      }
+    }
+    return unknown;
+  }
 }
