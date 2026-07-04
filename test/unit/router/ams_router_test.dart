@@ -330,6 +330,32 @@ void main() {
       expect(router.openPort(), AmsRouter.portBase + 1);
     });
 
+    test('direct connect with an all-zero source NetId fails fast', () async {
+      // Without setLocalAddress (and with nothing derived yet) a direct
+      // connect would stamp 0.0.0.0.0.0 — a guaranteed-failing configuration
+      // whose ERR-02 message would name a nonsense NetId. It must throw a
+      // clear configuration error BEFORE any allocation or I/O.
+      final router = fakeRouter();
+      expect(router.addRoute(netIdA, hostA), 0);
+
+      await expectLater(
+        router.connect(
+          netIdA,
+          AmsPort.plcTc3,
+          mode: const DirectTarget(hostA),
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('setLocalAddress'),
+          ),
+        ),
+      );
+      // Nothing was allocated by the failed attempt.
+      expect(router.openPort(), AmsRouter.portBase);
+    });
+
     test('an IPv6 local address skips the auto-derive instead of throwing',
         () async {
       // Dual-stack reality: `LocalRouterTarget(host: 'localhost')` can land on

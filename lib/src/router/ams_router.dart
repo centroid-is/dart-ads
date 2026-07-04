@@ -284,9 +284,12 @@ class AmsRouter {
   ///
   /// The first successful connection lazily auto-derives the router's source
   /// NetId as `<ip>.1.1` from the socket's local IPv4 (C++ parity) when no
-  /// explicit [setLocalAddress] was made — so a deterministic source NetId on
-  /// the very first direct connection is best obtained by calling
-  /// [setLocalAddress] up front.
+  /// explicit [setLocalAddress] was made. Because the derive can only run
+  /// AFTER a dial, a DIRECT connect with the source NetId still all-zero would
+  /// send known-misaddressed frames (and ERR-02 would name `0.0.0.0.0.0`) —
+  /// so direct mode throws a [StateError] up front in that state: call
+  /// [setLocalAddress] before the first direct connect (or connect through a
+  /// local router once, letting the auto-derive seed it).
   Future<AdsClient> connect(
     AmsNetId targetNetId,
     int amsPort, {
@@ -304,6 +307,21 @@ class AmsRouter {
     // routing to the endpoint itself, so no route-table entry is required.
     if (direct) {
       _requireRoute(targetNetId); // throws missingRoute (0x0007)
+
+      // A direct connection with the all-zero source NetId is a
+      // guaranteed-failing configuration: no PLC has a reverse route to
+      // 0.0.0.0.0.0, and the ERR-02 enrichment would then name that nonsense
+      // NetId as the one to add a reverse route for. Fail fast with the
+      // actual remediation instead of shipping a known-misaddressed frame.
+      // (The <ip>.1.1 auto-derive runs POST-dial, so it cannot fix the first
+      // direct connect — a prior local-router connect can seed it, though.)
+      if (_localAddr == _emptyNetId) {
+        throw StateError(
+          'direct mode requires a non-zero source NetId before the first '
+          'connect: call setLocalAddress(...) first (or make a local-router '
+          'connect first so the <ip>.1.1 auto-derive can seed it)',
+        );
+      }
     }
 
     // Validate everything fallible BEFORE taking a port slot: a non-u16
