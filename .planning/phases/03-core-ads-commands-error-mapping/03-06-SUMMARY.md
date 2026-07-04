@@ -97,6 +97,12 @@ None - no external service configuration required.
 - The 1:1 named groups give Phase 9 a mechanical grep target to confirm the Phase-3 slice of TEST-05.
 - Phase 4 (router) inherits the documented MISSING_ROUTE / unknown-AmsAddr scenarios as its own parity targets.
 
+## Self-Check: PASSED
+
+- FOUND: test/integration/ads_parity_test.dart
+- FOUND: .planning/phases/03-core-ads-commands-error-mapping/03-06-SUMMARY.md
+- FOUND commits: d1c6246 (Task 1), 73c11f1 (Task 2), 771409f (docs)
+
 ---
 *Phase: 03-core-ads-commands-error-mapping*
 *Completed: 2026-07-04*

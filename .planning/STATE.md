@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: ROADMAP.md and STATE.md written; REQUIREMENTS.md traceability populated.
-last_updated: "2026-07-04T10:21:31.216Z"
-last_activity: 2026-07-04 -- Phase 03 execution started
+last_updated: "2026-07-04T10:52:11.978Z"
+last_activity: 2026-07-04
 progress:
   total_phases: 9
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 17
-  completed_plans: 11
-  percent: 22
+  completed_plans: 17
+  percent: 33
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-07-03)
 
 ## Current Position
 
-Phase: 03 (Core ADS Commands & Error Mapping) — EXECUTING
-Plan: 1 of 6
-Status: Executing Phase 03
-Last activity: 2026-07-04 -- Phase 03 execution started
+Phase: 03 (Core ADS Commands & Error Mapping) — COMPLETE
+Plan: 6 of 6 (all plans complete)
+Status: Phase 03 complete — ready for Phase 04
+Last activity: 2026-07-04 -- Completed 03-06 (AdsLibTest parity port); Phase 03 done
 
-Progress: [██████████] 100%
+Progress: [███░░░░░░░] 33% (3 of 9 phases)
 
 ## Performance Metrics
 
@@ -56,6 +56,7 @@ Progress: [██████████] 100%
 | Phase 01 P01 | 2min | 3 tasks | 10 files |
 | Phase 01 P07 | 4min | 2 tasks | 5 files |
 | Phase 02 P04 | 7min | 2 tasks | 2 files |
+| Phase 03 P06 | 9min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -78,6 +79,8 @@ Recent decisions affecting current work:
 - [Phase ?]: [Phase 01]: 2-job CI is the Phase 2 gate — fast pure-Dart matrix + Linux CMake harness with golden-reproducibility and endian grep gate; no secrets.
 - [Phase ?]: [Phase 02]: No CI change needed — existing Linux integration job runs full 'dart test' which picks up @Tags(['integration']) tests.
 - [Phase ?]: [Phase 02]: Live integration tests use an explicit 10s per-request timeout so reorder/disconnect outcomes are provably correlation/connection results, never a timeout firing.
+- [Phase ?]: [Phase 03]: AdsLibTest parity ports use 1:1 C++-named test groups so the Phase-9 audit (TEST-05) confirms coverage mechanically.
+- [Phase ?]: [Phase 03]: testAdsTimeout adapts the C++ get/set-timeout config API to a real per-request timeout firing; port-handle error cases map to the Dart connection lifecycle (covered-by-equivalent).
 
 ### Pending Todos
 
@@ -101,6 +104,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-03T21:40:39.202Z
+Last session: 2026-07-04T10:50:16.722Z
 Stopped at: ROADMAP.md and STATE.md written; REQUIREMENTS.md traceability populated.
 Resume file: None

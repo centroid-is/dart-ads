@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Protocol Framing, Codecs & C++ Golden-Frame Harness** - Byte-accurate AMS codec + CMake mock/golden harness proving encode/decode parity (completed 2026-07-03)
 - [x] **Phase 2: TCP Transport, Connection Lifecycle & Invoke-ID Correlation** - Live socket, request/response correlation, and disconnect fan-out (completed 2026-07-03)
-- [ ] **Phase 3: Core ADS Commands & Error Mapping** - Read/Write/ReadWrite/ReadState/WriteControl/ReadDeviceInfo with typed exceptions
+- [x] **Phase 3: Core ADS Commands & Error Mapping** - Read/Write/ReadWrite/ReadState/WriteControl/ReadDeviceInfo with typed exceptions (completed 2026-07-04)
 - [ ] **Phase 4: AmsRouter & Direct / Local-Router Transport Modes** - NetId routing, runtime transport selection, and actionable 1861 route errors
 - [ ] **Phase 5: Device Notifications as Streams** - Subscribe/cancel as Dart Streams with nested stamp/sample demux and handle lifecycle
 - [ ] **Phase 6: Sum (Batched) Commands** - Batched read/write/readwrite with per-item partial-failure results
@@ -75,8 +75,8 @@ Decimal phases appear between their surrounding integers in numeric order.
   - [x] 03-02-PLAN.md — Pure error assets: full ADS error table, AdsException, AdsState enum (wave 1)
   - [x] 03-03-PLAN.md — request() seam: surface AMS-header errorCode to the client (wave 1)
   - [x] 03-04-PLAN.md — AdsClient + AdsStateInfo/DeviceInfo + both-levels throw (FakeTransport unit tests) (wave 2)
-  - [ ] 03-05-PLAN.md — Live integration: per-command success + both error levels via magic groups (wave 3)
-  - [ ] 03-06-PLAN.md — C++ AdsLibTest parity ports (partial TEST-05): 10 named scenarios (wave 3)
+  - [x] 03-05-PLAN.md — Live integration: per-command success + both error levels via magic groups (wave 3)
+  - [x] 03-06-PLAN.md — C++ AdsLibTest parity ports (partial TEST-05): 10 named scenarios (wave 3)
 **UI hint**: no
 
 ### Phase 4: AmsRouter & Direct / Local-Router Transport Modes
@@ -162,7 +162,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 |-------|----------------|--------|-----------|
 | 1. Protocol Framing, Codecs & Golden-Frame Harness | 7/7 | Complete   | 2026-07-03 |
 | 2. TCP Transport, Lifecycle & Correlation | 4/4 | Complete   | 2026-07-03 |
-| 3. Core ADS Commands & Error Mapping | 4/6 | In Progress|  |
+| 3. Core ADS Commands & Error Mapping | 6/6 | Complete   | 2026-07-04 |
 | 4. AmsRouter & Transport Modes | 0/TBD | Not started | - |
 | 5. Device Notifications as Streams | 0/TBD | Not started | - |
 | 6. Sum (Batched) Commands | 0/TBD | Not started | - |

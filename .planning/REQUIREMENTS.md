@@ -23,12 +23,12 @@ Requirements for initial release (full AdsLib parity). Each maps to roadmap phas
 
 ### Core ADS Commands
 
-- [ ] **CMD-01**: User can Read bytes at (indexGroup, indexOffset, length) [ADS Read 0x0002]
-- [ ] **CMD-02**: User can Write bytes at (indexGroup, indexOffset) [ADS Write 0x0003]
-- [ ] **CMD-03**: User can ReadWrite (write-then-read in one round-trip) [ADS ReadWrite 0x0009]
-- [ ] **CMD-04**: User can read device state (adsState + deviceState) [ADS ReadState 0x0004]
-- [ ] **CMD-05**: User can set device state via WriteControl [ADS WriteControl 0x0005]
-- [ ] **CMD-06**: User can read device info (name + version) [ADS ReadDeviceInfo 0x0001]
+- [x] **CMD-01**: User can Read bytes at (indexGroup, indexOffset, length) [ADS Read 0x0002]
+- [x] **CMD-02**: User can Write bytes at (indexGroup, indexOffset) [ADS Write 0x0003]
+- [x] **CMD-03**: User can ReadWrite (write-then-read in one round-trip) [ADS ReadWrite 0x0009]
+- [x] **CMD-04**: User can read device state (adsState + deviceState) [ADS ReadState 0x0004]
+- [x] **CMD-05**: User can set device state via WriteControl [ADS WriteControl 0x0005]
+- [x] **CMD-06**: User can read device info (name + version) [ADS ReadDeviceInfo 0x0001]
 
 ### Error Handling
 
@@ -79,7 +79,7 @@ Requirements for initial release (full AdsLib parity). Each maps to roadmap phas
 - [x] **TEST-02**: A golden-frame dump tool emits reference request/response byte vectors, and Dart codec unit tests assert encode AND decode parity against them
 - [x] **TEST-03**: Dart integration tests launch the mock via `Process.start` with an ephemeral port + stdout readiness handshake and tear it down cleanly
 - [ ] **TEST-04**: The mock deliberately fragments and coalesces frames to exercise TCP stream reassembly
-- [ ] **TEST-05**: Every applicable C++ AdsLibTest/AdsLibOOITest scenario has a Dart counterpart test (AmsAddr compare; router add/del route + local address; port open/close; Read incl. large buffer; ReadDeviceInfo; ReadState; ReadWrite; Write; WriteControl; Notification incl. many-notifications stress; Timeout; Large frames; Parallel read/write). Non-applicable internals (C++ RingBuffer, IpV4 helpers) documented as covered-by-equivalent (FrameAssembler tests) or N/A
+- [x] **TEST-05**: Every applicable C++ AdsLibTest/AdsLibOOITest scenario has a Dart counterpart test (AmsAddr compare; router add/del route + local address; port open/close; Read incl. large buffer; ReadDeviceInfo; ReadState; ReadWrite; Write; WriteControl; Notification incl. many-notifications stress; Timeout; Large frames; Parallel read/write). Non-applicable internals (C++ RingBuffer, IpV4 helpers) documented as covered-by-equivalent (FrameAssembler tests) or N/A
 
 ### Packaging & Publishing
 
@@ -132,7 +132,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | TEST-01 | Phase 1 | Complete |
 | TEST-02 | Phase 1 | Complete |
 | TEST-04 | Phase 1 | Pending |
-| TEST-05 | Phase 9 | Pending |
+| TEST-05 | Phase 9 | Complete |
 | TRANS-01 | Phase 2 | Complete |
 | TRANS-02 | Phase 2 | Complete |
 | TRANS-03 | Phase 2 | Complete |
@@ -140,12 +140,12 @@ Which phases cover which requirements. Populated during roadmap creation.
 | PROTO-03 | Phase 2 | Complete |
 | PROTO-04 | Phase 2 | Complete |
 | TEST-03 | Phase 2 | Complete |
-| CMD-01 | Phase 3 | Pending |
-| CMD-02 | Phase 3 | Pending |
-| CMD-03 | Phase 3 | Pending |
-| CMD-04 | Phase 3 | Pending |
-| CMD-05 | Phase 3 | Pending |
-| CMD-06 | Phase 3 | Pending |
+| CMD-01 | Phase 3 | Complete |
+| CMD-02 | Phase 3 | Complete |
+| CMD-03 | Phase 3 | Complete |
+| CMD-04 | Phase 3 | Complete |
+| CMD-05 | Phase 3 | Complete |
+| CMD-06 | Phase 3 | Complete |
 | ERR-01 | Phase 3 | Pending |
 | ROUTE-01 | Phase 4 | Pending |
 | ROUTE-02 | Phase 4 | Pending |
