@@ -12,7 +12,7 @@ findings:
   warning: 2
   info: 5
   total: 7
-status: issues_found
+status: clean
 ---
 
 # Phase 6: Code Review Report
@@ -113,3 +113,11 @@ void _requireBlock(Uint8List data, int cursor, int len, String what, int item) {
 _Reviewed: 2026-07-04T15:58:09Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
+
+
+## Resolutions (iteration 2, orchestrator-applied)
+
+- WR-01: fixed in `snapshot` commit — all three sum methods snapshot `items` via `List.unmodifiable` before the wire call; decoders consume the snapshot.
+- WR-02: fixed in same commit — `_requireBlock` rejects negative `len` (`len < 0 ||`), preserving the MalformedFrameException contract.
+- Verification: analyze --fatal-infos clean, format clean, 208 unit tests green.
+- Info findings IN-01..IN-05 remain open by scope.
