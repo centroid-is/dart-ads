@@ -214,4 +214,119 @@ void main() {
       ),
     );
   });
+
+  // ---------------------------------------------------------------------------
+  // Sum (batched) commands, live via the rebuilt mock's SUMUP sub-handler
+  // (06-02). Each test starts its own mock + connection, so the per-connection
+  // store keeps write-back assertions isolated. Every SumResult carries a
+  // per-item errorCode; a per-item failure is a VALUE, never a batch throw
+  // (SUM-04). Group name 'sum' makes `-n 'sum'` select exactly these tests.
+  // ---------------------------------------------------------------------------
+  group('sum', () {
+    test('read-after-write write-back', () async {
+      // SUM-02 + SUM-01: sumWrite N distinct keys, then sumRead the SAME keys
+      // and prove each item's data equals what was written — per-item
+      // write-back landed in the mock store and survives the round-trip.
+      final client = await connectClient();
+
+      const group = 0x4030;
+      final writes = <SumWriteRequest>[
+        for (var i = 0; i < 4; i++)
+          SumWriteRequest(
+            indexGroup: group,
+            indexOffset: i * 0x10,
+            data: Uint8List.fromList(
+                [0x10 + i, 0x20 + i, 0x30 + i, 0x40 + i]),
+          ),
+      ];
+
+      final writeResults =
+          await client.sumWrite(writes, timeout: requestTimeout);
+      expect(writeResults, hasLength(writes.length));
+      expect(writeResults.every((r) => r.isSuccess), isTrue,
+          reason: 'every write item must succeed');
+
+      final reads = <SumReadRequest>[
+        for (final w in writes)
+          SumReadRequest(
+            indexGroup: w.indexGroup,
+            indexOffset: w.indexOffset,
+            length: w.data.length,
+          ),
+      ];
+
+      final readResults = await client.sumRead(reads, timeout: requestTimeout);
+      expect(readResults, hasLength(writes.length));
+      for (var i = 0; i < writes.length; i++) {
+        expect(readResults[i].isSuccess, isTrue);
+        expect(readResults[i].valueOrThrow, equals(writes[i].data),
+            reason: 'read-after-sumWrite must reflect item $i write-back');
+      }
+    });
+
+    test('read batch', () async {
+      // SUM-01: sumRead-only of >=3 keys returns per-item success + correct
+      // bytes. Seed with single writes (the proven CMD-02 path) so the sumRead
+      // is a pure read of pre-existing store contents.
+      final client = await connectClient();
+
+      final keys = <(int, int, Uint8List)>[
+        (0x4031, 0x00, Uint8List.fromList(const [1, 2, 3, 4])),
+        (0x4031, 0x08, Uint8List.fromList(const [9, 8, 7, 6, 5])),
+        (0x4032, 0x00, Uint8List.fromList(const [0xAA, 0xBB])),
+      ];
+      for (final (g, o, d) in keys) {
+        await client.write(
+            indexGroup: g, indexOffset: o, data: d, timeout: requestTimeout);
+      }
+
+      final results = await client.sumRead(<SumReadRequest>[
+        for (final (g, o, d) in keys)
+          SumReadRequest(indexGroup: g, indexOffset: o, length: d.length),
+      ], timeout: requestTimeout);
+
+      expect(results, hasLength(keys.length));
+      for (var i = 0; i < keys.length; i++) {
+        expect(results[i].isSuccess, isTrue);
+        expect(results[i].valueOrThrow, equals(keys[i].$3));
+      }
+    });
+
+    test('read_write batch', () async {
+      // SUM-03: sumReadWrite writes-then-reads each item in one frame; the mock
+      // returns each item's data at its RETURNED length. One item requests
+      // fewer bytes back than it writes, proving the decoder slices by the
+      // returned length, not the requested one.
+      final client = await connectClient();
+
+      final full =
+          Uint8List.fromList(const [0x11, 0x22, 0x33, 0x44, 0x55, 0x66]);
+      final items = <SumReadWriteRequest>[
+        SumReadWriteRequest(
+            indexGroup: 0x4040,
+            indexOffset: 0x00,
+            readLength: full.length,
+            writeData: full),
+        SumReadWriteRequest(
+            indexGroup: 0x4040,
+            indexOffset: 0x10,
+            readLength: 2, // fewer bytes back than written -> returned len 2
+            writeData: full),
+        SumReadWriteRequest(
+            indexGroup: 0x4041,
+            indexOffset: 0x00,
+            readLength: 3,
+            writeData: Uint8List.fromList(const [0xDE, 0xAD, 0xBE])),
+      ];
+
+      final results = await client.sumReadWrite(items, timeout: requestTimeout);
+      expect(results, hasLength(items.length));
+      expect(results.every((r) => r.isSuccess), isTrue);
+      expect(results[0].valueOrThrow, equals(full));
+      expect(results[1].valueOrThrow, equals(full.sublist(0, 2)),
+          reason: 'returned length (2) < requested slice must be honored');
+      expect(results[2].valueOrThrow,
+          equals(Uint8List.fromList(const [0xDE, 0xAD, 0xBE])));
+    });
+  });
 }
