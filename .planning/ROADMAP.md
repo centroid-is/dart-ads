@@ -160,8 +160,8 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. `subscribe` streams timestamped notifications until interrupted and tears down handles cleanly on SIGINT; `action` changes state via `--state=RUN|CONFIG|STOP`
   4. `pull` snapshots symbols/values to a file (JSON/CSV) via sum-read, and `push` applies values back via sum-write with `--dry-run` and per-item pass/fail
 **Plans**: 7 plans in 2 waves
-  - [ ] 08-01-PLAN.md — CLI backbone: args CommandRunner, global flags, connection bootstrap, exit-code + ADS-error contract, seven command stubs (wave 1)
-  - [ ] 08-02-PLAN.md — Pure value/hex parsing seam (TDD, hostile-input hardened) (wave 1)
+  - [x] 08-01-PLAN.md — CLI backbone: args CommandRunner, global flags, connection bootstrap, exit-code + ADS-error contract, seven command stubs (wave 1)
+  - [x] 08-02-PLAN.md — Pure value/hex parsing seam (TDD, hostile-input hardened) (wave 1)
   - [ ] 08-03-PLAN.md — browse + read verbs (table/filter/json, typed/raw, unknown-symbol->1) (wave 2)
   - [ ] 08-04-PLAN.md — write verb (by-name typed / group-offset / --raw) (wave 2)
   - [ ] 08-05-PLAN.md — subscribe verb: timestamped stream + clean SIGINT handle teardown (wave 2)
@@ -196,5 +196,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 5. Device Notifications as Streams | 6/6 | Complete   | 2026-07-04 |
 | 6. Sum (Batched) Commands | 6/6 | Complete   | 2026-07-04 |
 | 7. Symbol Access, Browse & Typed Values | 6/6 | Complete   | 2026-07-04 |
-| 8. Dart CLI | 0/7 | Not started | - |
+| 8. Dart CLI | 2/7 | In Progress|  |
 | 9. Packaging & Publishing | 0/TBD | Not started | - |
