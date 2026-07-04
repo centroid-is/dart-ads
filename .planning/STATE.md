@@ -4,8 +4,8 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: ROADMAP.md and STATE.md written; REQUIREMENTS.md traceability populated.
-last_updated: "2026-07-04T11:46:33.526Z"
-last_activity: 2026-07-04 -- Phase 4 planning complete
+last_updated: "2026-07-04T11:46:34.105Z"
+last_activity: 2026-07-04 -- Phase 04 execution started
 progress:
   total_phases: 9
   completed_phases: 3
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-03)
 
 **Core value:** A Dart application can reliably connect to a Beckhoff PLC and read, write, and subscribe to variables over ADS — with wire behavior verified byte-for-byte against the reference C++ implementation.
-**Current focus:** Phase 4 — amsrouter & direct / local router transport modes
+**Current focus:** Phase 04 — AmsRouter & Transport Modes
 
 ## Current Position
 
-Phase: 4
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-07-04 -- Phase 4 planning complete
+Phase: 04 (AmsRouter & Transport Modes) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 04
+Last activity: 2026-07-04 -- Phase 04 execution started
 
 Progress: [███░░░░░░░] 33% (3 of 9 phases)
 
