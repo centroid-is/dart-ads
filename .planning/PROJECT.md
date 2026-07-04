@@ -16,7 +16,7 @@ A Dart application can reliably connect to a Beckhoff PLC and read, write, and s
 
 <!-- Shipped and confirmed valuable. -->
 
-(None yet — ship to validate)
+- ✓ v1.0 (2026-07-04): full AdsLib-parity pure-Dart client — framing/codecs (byte-for-byte vs C++ goldens), transport + invoke-ID correlation, core commands + full error table, AmsRouter (direct + local-router modes), notifications-as-Streams, sum commands, symbols + typed values, 7-verb CLI, publish-ready package. 372 tests incl. 21 C++ AdsLibTest parity ports (PARITY.md).
 
 ### Active
 
@@ -109,4 +109,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-04 after Phase 9 (Packaging & Publishing) — all 9 phases complete*
+*Last updated: 2026-07-04 after v1.0 milestone completion*
