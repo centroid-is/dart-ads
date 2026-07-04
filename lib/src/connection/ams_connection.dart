@@ -98,6 +98,16 @@ class AmsConnection {
   /// notification cannot kill other live subscriptions (threat T-5-02).
   int droppedNotifications = 0;
 
+  /// Count of successfully-parsed 0x08 samples whose handle matched no
+  /// registered demux controller.
+  ///
+  /// Not an error (C++ parity: samples for unknown handles are ignored) and
+  /// distinct from [droppedNotifications], which only counts parse failures.
+  /// This counter exists so a test can prove a registration race was actually
+  /// WON: a lost first-listen race surfaces here (the first same-chunk sample
+  /// arrives before the handle is mapped), never as a parse failure (WR-03).
+  int unregisteredNotifications = 0;
+
   /// Opens the underlying transport to [host]:[port] and wires the inbound
   /// byte stream into the frame reassembler.
   ///
@@ -399,7 +409,14 @@ class AmsConnection {
       );
       try {
         for (final n in parseNotificationStream(notificationPayload)) {
-          _demuxControllers[n.handle]?.add(n);
+          final controller = _demuxControllers[n.handle];
+          if (controller == null) {
+            // Unknown handle: ignored per C++ parity, but COUNTED so a lost
+            // registration race is observable to tests (WR-03).
+            unregisteredNotifications++;
+          } else {
+            controller.add(n);
+          }
         }
       } catch (_) {
         droppedNotifications++;

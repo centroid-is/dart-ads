@@ -410,11 +410,12 @@ struct NotifyStamp {
 // 132000000000000000 ≈ 2019-03-19T14:40:00Z.
 static const uint64_t kMockFiletimeBase = 132000000000000000ull;
 
-static void emitNotification(int fd, TransmitMode mode, size_t fragmentN,
-                             std::vector<uint8_t>& coalesceBuf,
-                             const AmsNetId& rTarget, uint16_t rTargetPort,
-                             const AmsNetId& rSource, uint16_t rSourcePort,
-                             const std::vector<NotifyStamp>& stamps)
+// Serialise one crafted 0x08 frame (without sending it) — the shared builder
+// behind emitNotification and the --notify-burst combined single-send path.
+static std::vector<uint8_t> buildNotificationFrame(
+    const AmsNetId& rTarget, uint16_t rTargetPort,
+    const AmsNetId& rSource, uint16_t rSourcePort,
+    const std::vector<NotifyStamp>& stamps)
 {
     std::vector<uint8_t> p;
     putU32(p, 0); // length placeholder (backfilled below)
@@ -437,9 +438,18 @@ static void emitNotification(int fd, TransmitMode mode, size_t fragmentN,
 
     Frame f(p.size(), p.data());
     // invokeId 0: unsolicited (Dart demuxes 0x08 on commandId before invokeId).
-    std::vector<uint8_t> frame =
-        wrapResponse(f, AoEHeader::DEVICE_NOTIFICATION, rTarget, rTargetPort,
-                     rSource, rSourcePort, 0);
+    return wrapResponse(f, AoEHeader::DEVICE_NOTIFICATION, rTarget, rTargetPort,
+                        rSource, rSourcePort, 0);
+}
+
+static void emitNotification(int fd, TransmitMode mode, size_t fragmentN,
+                             std::vector<uint8_t>& coalesceBuf,
+                             const AmsNetId& rTarget, uint16_t rTargetPort,
+                             const AmsNetId& rSource, uint16_t rSourcePort,
+                             const std::vector<NotifyStamp>& stamps)
+{
+    const std::vector<uint8_t> frame = buildNotificationFrame(
+        rTarget, rTargetPort, rSource, rSourcePort, stamps);
     sendResponse(fd, frame, mode, fragmentN, coalesceBuf);
 }
 
@@ -895,29 +905,36 @@ static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN,
                                            rTarget, rTargetPort, rSource, rSourcePort,
                                            rInvoke);
                         // --notify-burst N: emit N single-sample frames for the new
-                        // handle right AFTER the ADD response, back-to-back on the
-                        // same connection so the response and the first notification
-                        // coalesce into one inbound TCP chunk. This exercises the
+                        // handle right AFTER the ADD response. This exercises the
                         // first-listen race the Dart client MUST win via synchronous
                         // handle registration (05-RESEARCH Pitfall 2 / Pattern 2A):
                         // the handle is only knowable from the response, so a
                         // notification can only be routed once the response has been
                         // correlated — emitting AFTER the response is the winnable
                         // same-chunk race (emitting BEFORE would be unroutable by any
-                        // client, as the handle is not yet known). The response is
-                        // sent here (not via the outer haveRes path) so the bursts
-                        // provably follow it; --notify-burst is never combined with
-                        // --delay-ms in the suite, so bypassing the deferral is safe.
+                        // client, as the handle is not yet known).
+                        //
+                        // DETERMINISTIC same-chunk delivery (WR-03): the response and
+                        // ALL burst frames are concatenated and written in ONE send()
+                        // on the TCP_NODELAY socket, so they provably arrive in one
+                        // inbound TCP segment (the combined size is far below any
+                        // loopback MSS) — separate send()s left the kernel free to
+                        // deliver the first burst in a later chunk, letting a broken
+                        // (post-await) registration pass the race test. Bypassing
+                        // sendResponse/the deferral here is sound: main() rejects
+                        // --notify-burst combined with --fragment/--coalesce/
+                        // --delay-ms at argv parse.
                         if (notifyBurst > 0) {
-                            sendResponse(fd, res, mode, fragmentN, coalesceBuf);
+                            std::vector<uint8_t> combined(res);
                             for (int b = 0; b < notifyBurst; ++b) {
                                 const std::vector<uint8_t> data(cbLength, 0);
-                                emitNotification(fd, mode, fragmentN, coalesceBuf,
-                                                 rTarget, rTargetPort, rSource,
-                                                 rSourcePort,
-                                                 { { kMockFiletimeBase,
-                                                     { { handle, data } } } });
+                                const std::vector<uint8_t> nf = buildNotificationFrame(
+                                    rTarget, rTargetPort, rSource, rSourcePort,
+                                    { { kMockFiletimeBase,
+                                        { { handle, data } } } });
+                                combined.insert(combined.end(), nf.begin(), nf.end());
                             }
+                            sendAll(fd, combined.data(), combined.size());
                             haveRes = false; // already sent above
                         } else {
                             haveRes = true;
@@ -1062,6 +1079,20 @@ int main(int argc, char** argv)
             fprintf(stderr, "unknown argument: %s\n", arg.c_str());
             return 2;
         }
+    }
+
+    // --notify-burst promises "Add response + bursts in ONE send()" (the
+    // deterministic first-listen-race fixture, WR-03), which is incompatible
+    // with every transmission-shaping flag: --fragment would split the chunk,
+    // --coalesce would buffer (and possibly strand) it, and --delay-ms would
+    // defer the Add response until AFTER the bursts. Reject the combinations
+    // up front so a future test author gets an error, not a hang (WR-04).
+    if (notifyBurst > 0 &&
+        (mode != TransmitMode::Normal || delayMs > 0)) {
+        fprintf(stderr,
+                "--notify-burst cannot be combined with --fragment, "
+                "--coalesce, or --delay-ms\n");
+        return 2;
     }
 
     if (selftest) {

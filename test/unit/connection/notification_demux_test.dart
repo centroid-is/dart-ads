@@ -637,6 +637,8 @@ void main() {
       expect(conn.isConnected, isTrue);
       expect(conn.droppedNotifications, 0,
           reason: 'unknown handle is not a parse failure');
+      expect(conn.unregisteredNotifications, 1,
+          reason: 'the unrouted sample is counted (WR-03), not an error');
     });
 
     test(

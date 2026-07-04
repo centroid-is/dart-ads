@@ -185,15 +185,20 @@ void main() {
 
   // ---------------------------------------------------------------------------
   group('first-listen race', () {
-    test('the first burst notification (Add-response chunk) is delivered',
-        () async {
-      // --notify-burst 3: on each Add the mock emits 3 notifications back-to-back
-      // right AFTER the Add-response, so the response and the first notification
-      // coalesce into one inbound TCP chunk. Only TRUE synchronous handle
-      // registration (option A, 05-RESEARCH Pattern 2) delivers that first
-      // same-chunk sample; a post-await registration would drop it (threat
-      // T-5-11).
-      final client = await connectClient(args: ['--notify-burst', '3']);
+    test(
+        'ALL burst notifications (Add-response chunk) are delivered and none '
+        'is unrouted', () async {
+      // --notify-burst 3: the mock sends the Add-response AND all 3 burst
+      // frames in ONE send() on a TCP_NODELAY socket, so they provably share
+      // one inbound TCP chunk (deterministic, WR-03 — separate send()s left
+      // the chunk boundary to kernel timing). Only TRUE synchronous handle
+      // registration (option A, 05-RESEARCH Pattern 2) delivers the first
+      // same-chunk sample; a post-await registration runs one microtask too
+      // late, so burst #1 would hit an unmapped handle and surface in
+      // `unregisteredNotifications` — making a lost race a hard failure here
+      // (threat T-5-11).
+      const burst = 3;
+      final client = await connectClient(args: ['--notify-burst', '$burst']);
       final received = <AdsNotification>[];
 
       final sub = client
@@ -205,13 +210,17 @@ void main() {
           )
           .listen(received.add);
 
-      await waitUntil(() => received.isNotEmpty,
-          reason:
-              'first-listen race: the first burst notification was dropped');
+      // A lost race caps delivery at burst - 1: the stream is ordered, so if
+      // ALL of the burst arrived, the FIRST (same-chunk) sample arrived.
+      await waitUntil(() => received.length >= burst,
+          reason: 'first-listen race: not every burst notification arrived '
+              '(the first same-chunk sample was dropped?)');
 
-      expect(received, isNotEmpty,
-          reason:
-              'synchronous registration delivers the first same-chunk sample');
+      expect(received, hasLength(burst),
+          reason: 'synchronous registration delivers every same-chunk sample');
+      expect(client.connection.unregisteredNotifications, equals(0),
+          reason: 'a lost race routes burst #1 to an unmapped handle — that '
+              'must never happen');
       expect(client.connection.droppedNotifications, equals(0),
           reason: 'a delivered burst is never counted as dropped');
 
