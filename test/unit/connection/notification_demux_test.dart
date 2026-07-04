@@ -175,7 +175,9 @@ void main() {
       final notif = notifFrame(notifStream([
         (
           timestamp: ts,
-          samples: [(handle: handle, data: Uint8List.fromList([0xDE, 0xAD]))],
+          samples: [
+            (handle: handle, data: Uint8List.fromList([0xDE, 0xAD]))
+          ],
         ),
       ]));
       final chunk = Uint8List(add.length + notif.length)
@@ -433,7 +435,9 @@ void main() {
       fake.feed(notifFrame(notifStream([
         (
           timestamp: ts,
-          samples: [(handle: 0x11, data: Uint8List.fromList([7]))],
+          samples: [
+            (handle: 0x11, data: Uint8List.fromList([7]))
+          ],
         ),
       ])));
       await pump();
@@ -444,7 +448,8 @@ void main() {
       expect(conn.droppedNotifications, 1);
     });
 
-    test('disconnect error-closes every registered controller and clears the map',
+    test(
+        'disconnect error-closes every registered controller and clears the map',
         () async {
       final fake = FakeTransport();
       final conn = newConnection(fake);

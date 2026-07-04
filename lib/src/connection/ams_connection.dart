@@ -271,7 +271,8 @@ class AmsConnection {
     // listener only completes its close() future once listened, so awaiting it
     // here could hang. The stream is done regardless; the caller does not need
     // to observe teardown completion.
-    unawaited(_demuxControllers.remove(handle)?.close() ?? Future<void>.value());
+    unawaited(
+        _demuxControllers.remove(handle)?.close() ?? Future<void>.value());
   }
 
   /// Allocates the next monotonic u32 invoke-ID, wrapping `0xFFFFFFFF → 1` and
