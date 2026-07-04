@@ -32,7 +32,7 @@ Requirements for initial release (full AdsLib parity). Each maps to roadmap phas
 
 ### Error Handling
 
-- [ ] **ERR-01**: Library maps ADS error codes to typed Dart exceptions distinct from transport errors
+- [x] **ERR-01**: Library maps ADS error codes to typed Dart exceptions distinct from transport errors
 - [ ] **ERR-02**: Library surfaces error 1861/0x745 (missing route) with an actionable message naming the source AmsNetId and suggesting a route/firewall check
 
 ### Routing & Transport Modes
@@ -146,7 +146,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | CMD-04 | Phase 3 | Complete |
 | CMD-05 | Phase 3 | Complete |
 | CMD-06 | Phase 3 | Complete |
-| ERR-01 | Phase 3 | Pending |
+| ERR-01 | Phase 3 | Complete |
 | ROUTE-01 | Phase 4 | Pending |
 | ROUTE-02 | Phase 4 | Pending |
 | ROUTE-03 | Phase 4 | Pending |

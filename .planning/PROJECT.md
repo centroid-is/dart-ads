@@ -29,8 +29,8 @@ A Dart application can reliably connect to a Beckhoff PLC and read, write, and s
 - [x] Connection lifecycle: open, close, error/timeout handling — Validated in Phase 2 (reconnect deferred to v2 per RECON-01)
 
 **ADS commands (full AdsLib parity)**
-- [ ] Read, Write, ReadWrite
-- [ ] ReadState, WriteControl
+- [x] Read, Write, ReadWrite — Validated in Phase 3 (live vs mock + C++ parity ports)
+- [x] ReadState, WriteControl — Validated in Phase 3 (stateful WriteControl→ReadState proven)
 - [ ] Device notifications: add/delete subscriptions delivered as Dart `Stream`s
 - [ ] Symbol access by name (handle-by-name resolution, symbol upload/browse)
 - [ ] Sum (batched) commands — multiple reads/writes/notifications in one request
@@ -109,4 +109,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-03 after Phase 2 (TCP Transport, Connection Lifecycle & Invoke-ID Correlation) completion*
+*Last updated: 2026-07-04 after Phase 3 (Core ADS Commands & Error Mapping) completion*

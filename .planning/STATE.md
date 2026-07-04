@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: ROADMAP.md and STATE.md written; REQUIREMENTS.md traceability populated.
-last_updated: "2026-07-04T10:52:11.978Z"
+status: ready_to_plan
+stopped_at: Phase 03 complete (6/6) — ready to discuss Phase 4
+last_updated: 2026-07-04T11:19:00.267Z
 last_activity: 2026-07-04
 progress:
   total_phases: 9
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-03)
 
 **Core value:** A Dart application can reliably connect to a Beckhoff PLC and read, write, and subscribe to variables over ADS — with wire behavior verified byte-for-byte against the reference C++ implementation.
-**Current focus:** Phase 03 — Core ADS Commands & Error Mapping
+**Current focus:** Phase 4 — amsrouter & direct / local router transport modes
 
 ## Current Position
 
-Phase: 03 (Core ADS Commands & Error Mapping) — COMPLETE
-Plan: 6 of 6 (all plans complete)
-Status: Phase 03 complete — ready for Phase 04
-Last activity: 2026-07-04 -- Completed 03-06 (AdsLibTest parity port); Phase 03 done
+Phase: 4
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-07-04
 
 Progress: [███░░░░░░░] 33% (3 of 9 phases)
 
@@ -36,7 +36,7 @@ Progress: [███░░░░░░░] 33% (3 of 9 phases)
 
 **Velocity:**
 
-- Total plans completed: 11
+- Total plans completed: 17
 - Average duration: —
 - Total execution time: 0 hours
 
@@ -46,6 +46,7 @@ Progress: [███░░░░░░░] 33% (3 of 9 phases)
 |-------|-------|-------|----------|
 | 01 | 7 | - | - |
 | 02 | 4 | - | - |
+| 03 | 6 | - | - |
 
 **Recent Trend:**
 
