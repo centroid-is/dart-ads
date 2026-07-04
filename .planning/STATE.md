@@ -61,6 +61,12 @@ Progress: [██████████] 100%
 
 ### Decisions
 
+### User Directive (2026-07-04) — Standing, applies to all remaining phases
+- **Fully autonomous:** do not ask questions; auto-accept recommended grey-area answers in smart discuss; defer human-validation items into HUMAN-UAT files and continue.
+- **C++ test parity (TEST-05):** each feature phase ports the applicable AdsLibTest/AdsLibOOITest scenarios to Dart against the mock server: Phase 3 → port open/close, Read (+large buffer), ReadDeviceInfo, ReadState, ReadWrite, Write, WriteControl, Timeout, Large frames, Parallel read/write; Phase 4 → AmsAddr compare, router add/del route, set local address; Phase 5 → Notification + many-notifications stress; Phase 9 → final parity audit that every applicable scenario has a Dart counterpart (endurance test tagged `slow`, optional in CI).
+- **Completeness bar:** Dart library should reach functional parity with the C++ AdsLib surface.
+
+
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 

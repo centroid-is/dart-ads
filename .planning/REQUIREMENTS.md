@@ -79,6 +79,7 @@ Requirements for initial release (full AdsLib parity). Each maps to roadmap phas
 - [x] **TEST-02**: A golden-frame dump tool emits reference request/response byte vectors, and Dart codec unit tests assert encode AND decode parity against them
 - [x] **TEST-03**: Dart integration tests launch the mock via `Process.start` with an ephemeral port + stdout readiness handshake and tear it down cleanly
 - [ ] **TEST-04**: The mock deliberately fragments and coalesces frames to exercise TCP stream reassembly
+- [ ] **TEST-05**: Every applicable C++ AdsLibTest/AdsLibOOITest scenario has a Dart counterpart test (AmsAddr compare; router add/del route + local address; port open/close; Read incl. large buffer; ReadDeviceInfo; ReadState; ReadWrite; Write; WriteControl; Notification incl. many-notifications stress; Timeout; Large frames; Parallel read/write). Non-applicable internals (C++ RingBuffer, IpV4 helpers) documented as covered-by-equivalent (FrameAssembler tests) or N/A
 
 ### Packaging & Publishing
 
@@ -131,6 +132,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | TEST-01 | Phase 1 | Complete |
 | TEST-02 | Phase 1 | Complete |
 | TEST-04 | Phase 1 | Pending |
+| TEST-05 | Phase 9 | Pending |
 | TRANS-01 | Phase 2 | Complete |
 | TRANS-02 | Phase 2 | Complete |
 | TRANS-03 | Phase 2 | Complete |
