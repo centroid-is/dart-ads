@@ -271,7 +271,11 @@ class AmsRouter {
   ///   * [DirectTarget] dials the device peer directly. The target NetId MUST be
   ///     in this router's route table (add it with [addRoute] first) or a
   ///     `0x0007` `GLOBALERR_MISSING_ROUTE` [AdsRoutingException] is thrown
-  ///     BEFORE any socket I/O — never a connect-then-timeout probe. A request
+  ///     BEFORE any socket I/O — never a connect-then-timeout probe. The
+  ///     [DirectTarget]'s host:port must AGREE with that route-table entry:
+  ///     a mismatch throws a `0x0506` `ROUTERERR_PORTALREADYINUSE`
+  ///     [AdsRoutingException] naming both endpoints (the route table is the
+  ///     routing authority; a typo'd host must not silently misroute). A request
   ///     that later times out is enriched into an actionable `0x0745`/1861
   ///     [AdsRoutingException] naming the stamped source NetId (ERR-02); every
   ///     OTHER error (device errors, disconnects, malformed frames) propagates
@@ -319,7 +323,25 @@ class AmsRouter {
     // missing-route up front, before any I/O. Local-router mode delegates
     // routing to the endpoint itself, so no route-table entry is required.
     if (direct) {
-      _requireRoute(targetNetId); // throws missingRoute (0x0007)
+      final route = _requireRoute(targetNetId); // throws missingRoute (0x0007)
+
+      // Direct mode states the endpoint twice — addRoute(netId, host) and
+      // DirectTarget(deviceHost) — and the route table is the authority the
+      // 0x0007 gate claims. If the two disagree, refuse loudly (0x0506, the
+      // same same-NetId-different-endpoint conflict code addRoute uses)
+      // instead of silently sending every frame to a host the route table
+      // never sanctioned (a typo'd host would otherwise misroute with no
+      // diagnostic).
+      if (route.host != host || route.port != endpointPort) {
+        throw AdsRoutingException(
+          _routerErrPortAlreadyInUse,
+          targetNetId,
+          'DirectTarget endpoint $host:$endpointPort conflicts with the '
+          'route-table entry ${route.host}:${route.port} for target NetId '
+          '${targetNetId.dotted}; fix the DirectTarget host/port, or '
+          'removeRoute(...) + addRoute(...) the new endpoint first',
+        );
+      }
 
       // A direct connection with the all-zero source NetId is a
       // guaranteed-failing configuration: no PLC has a reverse route to

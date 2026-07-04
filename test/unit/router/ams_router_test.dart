@@ -366,6 +366,33 @@ void main() {
       expect(router.openPort(), AmsRouter.portBase);
     });
 
+    test('DirectTarget endpoint conflicting with the route table -> 0x0506',
+        () async {
+      // The endpoint is stated twice in direct mode (addRoute + DirectTarget);
+      // the route table is the authority — a disagreement must refuse loudly,
+      // not silently dial the DirectTarget host.
+      final router = fakeRouter()
+        ..setLocalAddress(AmsNetId(const [1, 2, 3, 4, 5, 6]));
+      expect(router.addRoute(netIdA, hostA), 0);
+
+      await expectLater(
+        router.connect(
+          netIdA,
+          AmsPort.plcTc3,
+          mode: const DirectTarget(hostB), // route says hostA
+        ),
+        throwsA(
+          isA<AdsRoutingException>()
+              .having((e) => e.code, 'code', 0x0506)
+              .having((e) => e.netId, 'netId', netIdA)
+              .having((e) => e.toString(), 'names both endpoints',
+                  allOf(contains(hostA), contains(hostB))),
+        ),
+      );
+      // Refused pre-allocation: no slot was consumed.
+      expect(router.openPort(), AmsRouter.portBase);
+    });
+
     test('direct connect with an all-zero source NetId fails fast', () async {
       // Without setLocalAddress (and with nothing derived yet) a direct
       // connect would stamp 0.0.0.0.0.0 — a guaranteed-failing configuration

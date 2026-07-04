@@ -34,6 +34,12 @@ sealed class TransportTarget {
 /// that as an actionable ADS `0x0745`/1861 error naming the source NetId rather
 /// than a bare timeout (ERR-02). Programmatic reverse-route creation over UDP
 /// `:48899` is a v2 concern (ROUTE-04).
+///
+/// [deviceHost]:[port] must MATCH the target NetId's `addRoute(netId, host)`
+/// entry: `AmsRouter.connect` treats the route table as the routing authority
+/// and throws a `0x0506` `ROUTERERR_PORTALREADYINUSE` conflict when the two
+/// disagree, rather than silently dialing an endpoint the route table never
+/// sanctioned.
 final class DirectTarget extends TransportTarget {
   /// Dials [deviceHost] on [port] (the AMS/TCP default `48898`).
   const DirectTarget(this.deviceHost, {this.port = 48898});
