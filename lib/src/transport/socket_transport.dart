@@ -51,6 +51,14 @@ class SocketTransport implements AdsTransport {
   }
 
   @override
+  String? get localAddress {
+    // dart:io `Socket.address` is the LOCAL InternetAddress obtained via
+    // getsockname; `.remoteAddress` (deliberately NOT used) is the peer. `.address`
+    // is the dotted-decimal string. Null before connect / after close.
+    return _socket?.address.address;
+  }
+
+  @override
   Future<void> close() async {
     final socket = _socket;
     if (socket == null) return;

@@ -29,6 +29,13 @@ class FakeTransport implements AdsTransport {
   /// this to verify invoke-ID stamping and outbound framing.
   final List<Uint8List> written = <Uint8List>[];
 
+  /// Stubbed local IPv4 (dotted form) returned by [localAddress]; default
+  /// `null` (as if not yet connected). Tests set this to inject a value such as
+  /// `"192.168.0.100"` so source-NetId auto-derivation (`<ip>.1.1`) can be
+  /// exercised without a live socket.
+  @override
+  String? localAddress;
+
   @override
   Future<void> connect(String host, int port) async {
     // No socket to open; completing is enough to satisfy the interface.

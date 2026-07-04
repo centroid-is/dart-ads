@@ -55,4 +55,15 @@ abstract interface class AdsTransport {
   /// underlying socket so neither the read nor the write half is left dangling.
   /// Idempotent: calling [close] on an already-closed transport is a no-op.
   Future<void> close();
+
+  /// The connected socket's LOCAL IPv4 in dotted form (e.g. `"127.0.0.1"`), or
+  /// `null` before [connect] / after [close].
+  ///
+  /// This is the `getsockname` equivalent: the address the OS bound the local
+  /// end of the socket to, NOT the peer's address. The Phase-4 AmsRouter uses it
+  /// to auto-derive the source AmsNetId as `<ip>.1.1` (AdsLib parity).
+  ///
+  /// Nullable by design: consumers MUST null-check before deriving `<ip>.1.1`,
+  /// because the local address is only known once a connection is established.
+  String? get localAddress;
 }
