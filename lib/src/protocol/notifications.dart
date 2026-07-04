@@ -197,6 +197,81 @@ int decodeDeleteNotificationResponse(Uint8List payload) {
 }
 
 // ---------------------------------------------------------------------------
+// Nested 0x08 stream parser
+// ---------------------------------------------------------------------------
+
+/// Parses an unsolicited DeviceNotification (0x08) stream payload into a flat
+/// list of [AdsNotification] samples.
+///
+/// Wire layout (transcribed from `NotificationDispatcher::Run`,
+/// `NotificationDispatcher.cpp:56`), all fields little-endian:
+///
+/// ```
+/// length u32            // == payload.length - 4 (self-describing; validated)
+/// stamps u32
+/// per stamp (x stamps):
+///   timestamp  u64      // FILETIME, 100ns ticks since 1601-01-01 UTC
+///   sampleCount u32
+///   per sample (x sampleCount):
+///     handle u32        // demux key
+///     size   u32        // data byte count
+///     data[size]
+/// ```
+///
+/// The C++ leading `fullLength` u32 is NOT on the wire (it is a ring-buffer
+/// artefact), so the Dart payload begins at `length`. One wire sample maps to
+/// one [AdsNotification]; every sample in a stamp shares that stamp's timestamp.
+///
+/// This is the untrusted-input boundary (threats T-5-03 / T-5-04): every field
+/// read is bounds-checked against the remaining buffer BEFORE dereference, so a
+/// truncated / oversized / lying-count frame throws [MalformedFrameException]
+/// and never reads out of bounds. Each sample's data is a defensive copy that
+/// does not alias the input buffer.
+List<AdsNotification> parseNotificationStream(Uint8List payload) {
+  if (payload.length < 8) {
+    throw MalformedFrameException(
+      'notification stream requires at least 8 bytes, got ${payload.length}',
+      length: payload.length,
+    );
+  }
+  final bd = ByteData.sublistView(payload);
+  final length = bd.getUint32(0, Endian.little);
+  if (length + 4 != payload.length) {
+    throw MalformedFrameException(
+      'notification length $length + 4 != payload ${payload.length}',
+      length: length,
+    );
+  }
+  final stamps = bd.getUint32(4, Endian.little);
+  final out = <AdsNotification>[];
+  var off = 8;
+  for (var s = 0; s < stamps; s++) {
+    if (off + 12 > payload.length) {
+      throw MalformedFrameException('stamp header overrun', offset: off);
+    }
+    final timestamp = filetimeToDateTime(bd.getUint64(off, Endian.little));
+    final sampleCount = bd.getUint32(off + 8, Endian.little);
+    off += 12;
+    for (var i = 0; i < sampleCount; i++) {
+      if (off + 8 > payload.length) {
+        throw MalformedFrameException('sample header overrun', offset: off);
+      }
+      final handle = bd.getUint32(off, Endian.little);
+      final size = bd.getUint32(off + 4, Endian.little);
+      off += 8;
+      if (off + size > payload.length) {
+        throw MalformedFrameException('sample data overrun', offset: off);
+      }
+      // Defensive copy so the returned data does not alias the source buffer.
+      final data = Uint8List.fromList(payload.sublist(off, off + size));
+      off += size;
+      out.add(AdsNotification(handle: handle, timestamp: timestamp, data: data));
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // Internals
 // ---------------------------------------------------------------------------
 
