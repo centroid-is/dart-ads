@@ -22,6 +22,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import '../connection/ams_connection.dart';
@@ -29,6 +30,7 @@ import '../protocol/ads_error.dart';
 import '../protocol/ams_net_id.dart';
 import '../protocol/commands.dart';
 import '../protocol/constants.dart';
+import '../protocol/exceptions.dart';
 import '../protocol/notifications.dart';
 import '../protocol/sum_commands.dart';
 import 'ads_types.dart';
@@ -124,6 +126,107 @@ class AdsClient {
     final decoded = decodeReadWriteResponse(response);
     _throwOnResult(decoded.result);
     return decoded.data;
+  }
+
+  // -------------------------------------------------------------------------
+  // Symbol access — handle lifecycle (SYM-01)
+  // -------------------------------------------------------------------------
+
+  /// Resolves the symbol [name] to a device handle via SYM_HNDBYNAME
+  /// (ReadWrite 0xF003).
+  ///
+  /// The name is encoded Latin-1 with a trailing NUL (locked decision A1:
+  /// real-PLC-safe, matches pyads; the mock strips the NUL before lookup). The
+  /// device returns exactly 4 bytes — the u32 handle, little-endian. Reuses the
+  /// existing [readWrite] path, so no new [AdsException] throw site is added.
+  Future<int> getHandleByName(String name, {Duration? timeout}) async {
+    final nameBytes = latin1.encode(name);
+    final writeData = Uint8List(nameBytes.length + 1)
+      ..setRange(0, nameBytes.length, nameBytes); // trailing NUL (zero-filled)
+    final data = await readWrite(
+      indexGroup: AdsIndexGroup.symbolHandleByName,
+      indexOffset: 0,
+      readLength: 4,
+      writeData: writeData,
+      timeout: timeout,
+    );
+    if (data.length < 4) {
+      throw MalformedFrameException(
+        'SYM_HNDBYNAME returned ${data.length} bytes, expected a 4-byte handle',
+        length: 4,
+        offset: 0,
+      );
+    }
+    return ByteData.sublistView(data).getUint32(0, Endian.little);
+  }
+
+  /// Reads [size] bytes of the symbol identified by [handle] via SYM_VALBYHND
+  /// (Read 0xF005, indexOffset == handle). Returns raw bytes (SYM-04).
+  Future<Uint8List> readByHandle(int handle, int size, {Duration? timeout}) =>
+      read(
+        indexGroup: AdsIndexGroup.symbolValueByHandle,
+        indexOffset: handle,
+        length: size,
+        timeout: timeout,
+      );
+
+  /// Writes [data] to the symbol identified by [handle] via SYM_VALBYHND
+  /// (Write 0xF005, indexOffset == handle).
+  Future<void> writeByHandle(int handle, Uint8List data, {Duration? timeout}) =>
+      write(
+        indexGroup: AdsIndexGroup.symbolValueByHandle,
+        indexOffset: handle,
+        data: data,
+        timeout: timeout,
+      );
+
+  /// Releases [handle] via SYM_RELEASEHND (Write 0xF006).
+  ///
+  /// Per the vendored AdsLib the handle is the 4-byte little-endian DATA payload
+  /// and indexOffset is 0 — NOT the other way around.
+  Future<void> releaseHandle(int handle, {Duration? timeout}) {
+    final data = Uint8List(4);
+    ByteData.sublistView(data).setUint32(0, handle, Endian.little);
+    return write(
+      indexGroup: AdsIndexGroup.symbolReleaseHandle,
+      indexOffset: 0,
+      data: data,
+      timeout: timeout,
+    );
+  }
+
+  /// Resolves [name], reads [size] bytes, then releases the handle — even if the
+  /// read fails (T-7-01: no handle leak on op failure). Returns raw bytes.
+  Future<Uint8List> readByName(String name, int size, {Duration? timeout}) async {
+    final handle = await getHandleByName(name, timeout: timeout);
+    try {
+      return await readByHandle(handle, size, timeout: timeout);
+    } finally {
+      await _releaseQuietly(handle, timeout);
+    }
+  }
+
+  /// Resolves [name], writes [data], then releases the handle — even if the
+  /// write fails (T-7-01: no handle leak on op failure).
+  Future<void> writeByName(String name, Uint8List data,
+      {Duration? timeout}) async {
+    final handle = await getHandleByName(name, timeout: timeout);
+    try {
+      await writeByHandle(handle, data, timeout: timeout);
+    } finally {
+      await _releaseQuietly(handle, timeout);
+    }
+  }
+
+  /// Releases [handle], swallowing any error so a failing release in a `finally`
+  /// never masks the real operation result (mirrors [_deleteQuietly]).
+  Future<void> _releaseQuietly(int handle, Duration? timeout) async {
+    try {
+      await releaseHandle(handle, timeout: timeout);
+    } catch (_) {
+      // Intentionally swallowed — a best-effort release must never throw over
+      // the operation's own outcome.
+    }
   }
 
   /// Issues a SUMUP_READ (0xF080) batch — reads every item in [items] in a
