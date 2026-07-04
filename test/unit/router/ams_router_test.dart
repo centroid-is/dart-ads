@@ -1,9 +1,18 @@
 @Tags(['unit'])
 library;
 
+import 'dart:async';
+
 import 'package:dart_ads/dart_ads.dart';
 import 'package:dart_ads/src/transport/fake_transport.dart';
 import 'package:test/test.dart';
+
+/// A [FakeTransport] whose dial never completes — the unit-level stand-in for
+/// an unreachable host (powered-off PLC / dropped SYN).
+final class _HangingDialTransport extends FakeTransport {
+  @override
+  Future<void> connect(String host, int port) => Completer<void>().future;
+}
 
 // =============================================================================
 // C++ AdsLibTest parity port — Phase 4 slice of TEST-05 (router registry).
@@ -328,6 +337,33 @@ void main() {
       // ...and both slots are back in the pool (30000 is first-free again).
       expect(router.openPort(), AmsRouter.portBase);
       expect(router.openPort(), AmsRouter.portBase + 1);
+    });
+
+    test('a hung dial times out to a typed 0x0745 and rolls the slot back',
+        () async {
+      final router = AmsRouter(
+        transportFactory: (host, port) => _HangingDialTransport(),
+        connectTimeout: const Duration(milliseconds: 50),
+      )..setLocalAddress(AmsNetId(const [1, 2, 3, 4, 5, 6]));
+
+      await expectLater(
+        router.connect(
+          netIdA,
+          AmsPort.plcTc3,
+          mode: const LocalRouterTarget(host: hostA),
+        ),
+        throwsA(
+          isA<AdsRoutingException>()
+              .having((e) => e.code, 'code', 0x0745)
+              .having((e) => e.toString(), 'names the endpoint',
+                  contains('$hostA:48898'))
+              .having(
+                  (e) => e.toString(), 'dial wording', contains('TCP connect')),
+        ),
+      );
+      // The rollback freed the slot; connect() did not hang for the OS
+      // TCP timeout.
+      expect(router.openPort(), AmsRouter.portBase);
     });
 
     test('direct connect with an all-zero source NetId fails fast', () async {

@@ -70,14 +70,21 @@ class _Route {
 /// source address, behind an injectable connection/transport factory.
 class AmsRouter {
   /// Creates a router that builds route connections via [transportFactory]
-  /// (default: a real [SocketTransport] per route), applying [defaultTimeout] to
-  /// each owned [AmsConnection].
+  /// (default: a real [SocketTransport] per route), applying [defaultTimeout]
+  /// to each owned [AmsConnection]'s requests and bounding each [connect]
+  /// dial by [connectTimeout].
+  ///
+  /// Without [connectTimeout] the dial would hang for the OS TCP connect
+  /// timeout (minutes) when the endpoint host is unreachable — the most
+  /// common direct-mode field failure (device powered off / wrong IP).
   AmsRouter({
     TransportFactory? transportFactory,
     Duration defaultTimeout = const Duration(seconds: 5),
+    Duration connectTimeout = const Duration(seconds: 5),
   })  : _transportFactory =
             transportFactory ?? ((host, port) => SocketTransport()),
-        _defaultTimeout = defaultTimeout;
+        _defaultTimeout = defaultTimeout,
+        _connectTimeout = connectTimeout;
 
   /// Base of the local AMS port range (`PORT_BASE`, `Router.h`). The allocator
   /// hands out `[portBase, portBase + numPortsMax)` = `[30000, 30128)`.
@@ -104,6 +111,7 @@ class AmsRouter {
 
   final TransportFactory _transportFactory;
   final Duration _defaultTimeout;
+  final Duration _connectTimeout;
 
   /// Fixed 128-slot local-port allocator. `_ports[i] == 0` means slot `i` is
   /// free; otherwise it holds the assigned port value `portBase + i`.
@@ -282,6 +290,11 @@ class AmsRouter {
   /// `source = AmsAddr(localAddr, allocatedPort)` →
   /// `target = AmsAddr(targetNetId, amsPort)`.
   ///
+  /// The dial itself is bounded by the router's `connectTimeout` (constructor
+  /// parameter, default 5 s): an unreachable endpoint yields a `0x0745`
+  /// [AdsRoutingException] with dial-specific remediation after a clean
+  /// rollback — never an OS-length (minutes) TCP connect hang.
+  ///
   /// The first successful connection lazily auto-derives the router's source
   /// NetId as `<ip>.1.1` from the socket's local IPv4 (C++ parity) when no
   /// explicit [setLocalAddress] was made. Because the derive can only run
@@ -365,7 +378,12 @@ class AmsRouter {
               defaultTimeout: _defaultTimeout,
             );
 
-      await connection.connect(host, endpointPort);
+      // Bound the dial: Socket.connect alone would block for the platform
+      // TCP timeout (75 s+ on macOS, ~2 min on Linux) on an unreachable
+      // host. On expiry the rollback below releases the slot and close()s
+      // the connection, which tears the transport down (SocketTransport
+      // additionally destroys a late-completing socket — see its guard).
+      await connection.connect(host, endpointPort).timeout(_connectTimeout);
 
       // First-connection <ip>.1.1 derivation (C++ parity): once the socket is
       // up, learn the local IPv4 and, if no explicit local address was set,
@@ -379,6 +397,21 @@ class AmsRouter {
           _isDottedIpv4(localIp)) {
         _localAddr = AmsNetId.fromIpv4(localIp);
       }
+    } on TimeoutException {
+      closePort(sourcePort);
+      final failed = connection;
+      if (failed != null) {
+        unawaited(failed.close());
+      }
+      // A dial timeout is an unreachable endpoint, not a missing reverse
+      // route — surface it as the routing family with dial-specific
+      // remediation (still code 0x0745/1861, the client sync-timeout).
+      throw AdsRoutingException.dialTimeout(
+        targetNetId,
+        host,
+        endpointPort,
+        _connectTimeout,
+      );
     } catch (_) {
       closePort(sourcePort);
       final failed = connection;

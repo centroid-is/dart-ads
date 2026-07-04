@@ -40,7 +40,8 @@ class AdsRoutingException extends AdsException {
 
   /// The local missing-route case (`0x0007` `GLOBALERR_MISSING_ROUTE`): [netId]
   /// is not in the route table. Thrown up front, before any I/O.
-  factory AdsRoutingException.missingRoute(AmsNetId netId) => AdsRoutingException(
+  factory AdsRoutingException.missingRoute(AmsNetId netId) =>
+      AdsRoutingException(
         0x0007,
         netId,
         'no route to target NetId ${netId.dotted}; '
@@ -53,13 +54,35 @@ class AdsRoutingException extends AdsException {
   ///
   /// Composition only — Plan 04 wires the direct-mode timeout catch that throws
   /// this; this plan does not.
-  factory AdsRoutingException.directTimeout(AmsNetId netId) => AdsRoutingException(
+  factory AdsRoutingException.directTimeout(AmsNetId netId) =>
+      AdsRoutingException(
         0x0745,
         netId,
         'request timed out with no reply: the target has no reverse ADS route '
         'back to source NetId ${netId.dotted}. Add a reverse route on the '
         'target PLC (TwinCAT route config or `adstool addroute`) and check the '
         'firewall / AMS port 48898 — never surface this as a bare timeout',
+      );
+
+  /// The dial-timeout case (`0x0745` `ADSERR_CLIENT_SYNCTIMEOUT`, 1861): the
+  /// TCP connect to [host]:[port] for target [netId] did not complete within
+  /// [timeout] — the endpoint is unreachable (device powered off, wrong
+  /// IP/host, or a firewall dropping AMS/TCP), NOT a missing reverse route
+  /// (no request was ever sent). Thrown by `AmsRouter.connect` after rolling
+  /// back the allocated source-port slot.
+  factory AdsRoutingException.dialTimeout(
+    AmsNetId netId,
+    String host,
+    int port,
+    Duration timeout,
+  ) =>
+      AdsRoutingException(
+        0x0745,
+        netId,
+        'TCP connect to $host:$port for target NetId ${netId.dotted} timed '
+        'out after ${timeout.inMilliseconds} ms: the endpoint is unreachable. '
+        'Check the host/IP, that the device is powered and on the network, '
+        'and that no firewall is blocking AMS/TCP port $port',
       );
 
   /// The AMS Net ID this routing failure concerns (the unrouted target for the

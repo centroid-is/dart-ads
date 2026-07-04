@@ -22,9 +22,24 @@ class SocketTransport implements AdsTransport {
   /// The live socket, or `null` before [connect] / after [close].
   Socket? _socket;
 
+  /// Set by [close]; guards against a dial that completes AFTERWARDS.
+  ///
+  /// `AmsRouter.connect` races the dial against its `connectTimeout` and, on
+  /// expiry, tears the connection (and this transport) down while
+  /// `Socket.connect` may still be pending. When that abandoned dial finally
+  /// completes, the socket must be destroyed immediately — otherwise the fd
+  /// would leak with no handle left to close it.
+  bool _closed = false;
+
   @override
   Future<void> connect(String host, int port) async {
     final socket = await Socket.connect(host, port);
+    if (_closed) {
+      // close() ran while the dial was in flight (e.g. a dial-timeout
+      // rollback): release the late socket instead of leaking it.
+      socket.destroy();
+      throw StateError('SocketTransport closed before connect() completed');
+    }
     // Disable Nagle: ADS frames are small and latency-sensitive, so we want
     // each write on the wire immediately rather than coalesced.
     socket.setOption(SocketOption.tcpNoDelay, true);
@@ -60,6 +75,7 @@ class SocketTransport implements AdsTransport {
 
   @override
   Future<void> close() async {
+    _closed = true; // a dial still in flight will self-destroy on completion
     final socket = _socket;
     if (socket == null) return;
     _socket = null;
