@@ -15,7 +15,7 @@ findings:
   warning: 7
   info: 5
   total: 13
-status: issues_found
+status: clean
 ---
 
 # Phase 8: Code Review Report
@@ -142,3 +142,18 @@ Future<void> teardown() async {
 _Reviewed: 2026-07-04_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
+
+
+## Resolutions (orchestrator-applied, iteration 2)
+
+All 8 findings fixed in one commit (see `fix(08): CLI review fixes`):
+- CR-01: parseHex strict `^[0-9a-fA-F]+$` guard + 3 regression tests
+- WR-01: single-flight `teardownFuture ??= doTeardown()`; teardown never throws (per-step try/catch); finally awaits the in-flight future
+- WR-02: --on-change/--no-on-change honored; contradictions and --no-on-change-without---cycle are UsageException
+- WR-03: FileSystemException → exit 2 (usage family) in guarded()
+- WR-04: `_maxTotalBytes` 4 MiB total-bytes cap in push snapshot validation
+- WR-05: `data.length != size` rejected (no silent partial writes)
+- WR-06: case-insensitive symbol resolve in all 3 copies; surprise-success handle released before throwing
+- WR-07: RangeError caught before ArgumentError → exit 1; regression tests in test/cli/base_command_exit_codes_test.dart
+- Verification: analyze --fatal-infos clean, format clean, full suite 372/372 green
+- Info findings remain open by scope.
