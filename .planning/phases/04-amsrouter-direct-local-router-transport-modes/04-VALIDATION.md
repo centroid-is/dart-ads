@@ -2,8 +2,8 @@
 phase: 4
 slug: amsrouter-direct-local-router-transport-modes
 status: draft
-nyquist_compliant: false
-wave_0_complete: false
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-07-04
 ---
 
@@ -38,9 +38,9 @@ created: 2026-07-04
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| (planner) | — | — | ROUTE-01 | — | Same command sequence through both modes, zero command-code change | integration | `dart test test/integration/router_test.dart` | ❌ W0 | ⬜ pending |
-| (planner) | — | — | ROUTE-02 | T-4-01 | NetId→connection map; port alloc 30000..30127, exhaustion → 0/typed error | unit | `dart test test/unit/ams_router_test.dart` | ❌ W0 | ⬜ pending |
-| (planner) | — | — | ROUTE-03 | — | setLocalAddress + route table; unrouted NetId → GLOBALERR_MISSING_ROUTE (0x0007) pre-I/O | unit | `dart test test/unit/ams_router_test.dart` | ❌ W0 | ⬜ pending |
+| (planner) | — | — | ROUTE-01 | — | Same command sequence through both modes, zero command-code change | integration | `dart test test/integration/router_transport_modes_test.dart` | ❌ W0 | ⬜ pending |
+| (planner) | — | — | ROUTE-02 | T-4-01 | NetId→connection map; port alloc 30000..30127, exhaustion → 0/typed error | unit | `dart test test/unit/router/ams_router_test.dart` | ❌ W0 | ⬜ pending |
+| (planner) | — | — | ROUTE-03 | — | setLocalAddress + route table; unrouted NetId → GLOBALERR_MISSING_ROUTE (0x0007) pre-I/O | unit | `dart test test/unit/router/ams_router_test.dart` | ❌ W0 | ⬜ pending |
 | (planner) | — | — | ERR-02 | T-4-02 | Direct-mode timeout → AdsException code 0x745 naming source NetId, never bare timeout | unit+integration | `dart test --name '1861|missing.route'` | ❌ W0 | ⬜ pending |
 | (planner) | — | — | TEST-05 (slice) | — | 5 router parity ports named 1:1 | unit/integration | `dart test test/unit/router_parity_test.dart` (or integration file) | ❌ W0 | ⬜ pending |
 

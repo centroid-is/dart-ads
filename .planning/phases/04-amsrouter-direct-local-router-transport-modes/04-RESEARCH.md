@@ -320,7 +320,7 @@ AmsNetId amsNetIdFromIpv4(String dottedIpv4) {
 | A3 | `router.connect()` is the primary construction path while `AdsClient`/`AmsConnection` stay also-public | Structure | LOW — CONTEXT lists this as discretion; keeping both is strictly additive |
 | A4 | `AdsTransport.localAddress` returning the local IPv4 string is the cleanest way to feed `<ip>.1.1` derivation | Source NetId | LOW — `Socket.address` is the documented local address; FakeTransport makes it configurable |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Does `router.connect()` open a *local AMS port* per client, or per connection?**
    - What we know: C++ `AdsPortOpenEx` (per client handle) and `AddRoute` (per connection) are independent; a port is the source port, a connection is per host.
