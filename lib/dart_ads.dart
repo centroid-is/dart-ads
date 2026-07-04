@@ -92,6 +92,11 @@ export 'src/protocol/constants.dart'
 export 'src/protocol/ads_error.dart'
     show AdsException, adsErrorName, adsErrorText;
 
+/// The router-layer [AdsRoutingException] — an [AdsException] subtype carrying
+/// the [AmsNetId] a routing failure concerns plus actionable remediation text
+/// (local missing-route `0x0007`; direct-mode reverse-route timeout `0x0745`).
+export 'src/router/routing_exception.dart' show AdsRoutingException;
+
 /// The [AdsClient] (L6-lite): the idiomatic async API over the six core ADS
 /// commands, with both-levels [AdsException] mapping. Its typed returns
 /// [AdsStateInfo] (from `readState`) and [DeviceInfo] (from `readDeviceInfo`)
