@@ -103,3 +103,9 @@ export 'src/router/routing_exception.dart' show AdsRoutingException;
 /// are pure value types.
 export 'src/client/ads_client.dart' show AdsClient;
 export 'src/client/ads_types.dart' show AdsStateInfo, DeviceInfo;
+
+/// The [AmsRouter] registry: the local-AMS-port allocator (base 30000, 128
+/// slots), the target-NetId → [AmsConnection] route table, and the mutable
+/// source address with `<ip>.1.1` auto-derive. The `TransportFactory` typedef
+/// is its injectable connection seam. (Plan 04 adds the transport-mode targets.)
+export 'src/router/ams_router.dart' show AmsRouter, TransportFactory;
