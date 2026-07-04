@@ -53,6 +53,27 @@ void main() {
     await conn.close();
   });
 
+  test('SocketTransport reports a dotted local address once connected', () async {
+    final transport = SocketTransport();
+
+    // Before connect the local end is unbound: no address yet.
+    expect(transport.localAddress, isNull);
+
+    await transport.connect('127.0.0.1', server.port);
+
+    // getsockname now yields the loopback local address the OS bound us to — a
+    // non-null, non-empty dotted IPv4 (this is what <ip>.1.1 derivation reads).
+    final local = transport.localAddress;
+    expect(local, isNotNull);
+    expect(local, isNotEmpty);
+    expect(local, matches(RegExp(r'^\d{1,3}(\.\d{1,3}){3}$')));
+
+    await transport.close();
+
+    // After teardown the socket is gone, so the address reverts to null.
+    expect(transport.localAddress, isNull);
+  });
+
   test('close completes done and flips isConnected', () async {
     final conn = newConnection();
     await conn.connect('127.0.0.1', server.port);
