@@ -74,7 +74,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   - [x] 03-01-PLAN.md — C++ mock: data store, stateful ReadState/WriteControl, two magic error-group fixtures (wave 1)
   - [x] 03-02-PLAN.md — Pure error assets: full ADS error table, AdsException, AdsState enum (wave 1)
   - [x] 03-03-PLAN.md — request() seam: surface AMS-header errorCode to the client (wave 1)
-  - [ ] 03-04-PLAN.md — AdsClient + AdsStateInfo/DeviceInfo + both-levels throw (FakeTransport unit tests) (wave 2)
+  - [x] 03-04-PLAN.md — AdsClient + AdsStateInfo/DeviceInfo + both-levels throw (FakeTransport unit tests) (wave 2)
   - [ ] 03-05-PLAN.md — Live integration: per-command success + both error levels via magic groups (wave 3)
   - [ ] 03-06-PLAN.md — C++ AdsLibTest parity ports (partial TEST-05): 10 named scenarios (wave 3)
 **UI hint**: no
@@ -162,7 +162,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 |-------|----------------|--------|-----------|
 | 1. Protocol Framing, Codecs & Golden-Frame Harness | 7/7 | Complete   | 2026-07-03 |
 | 2. TCP Transport, Lifecycle & Correlation | 4/4 | Complete   | 2026-07-03 |
-| 3. Core ADS Commands & Error Mapping | 3/6 | In Progress|  |
+| 3. Core ADS Commands & Error Mapping | 4/6 | In Progress|  |
 | 4. AmsRouter & Transport Modes | 0/TBD | Not started | - |
 | 5. Device Notifications as Streams | 0/TBD | Not started | - |
 | 6. Sum (Batched) Commands | 0/TBD | Not started | - |
