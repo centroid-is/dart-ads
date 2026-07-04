@@ -91,7 +91,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 4 plans in 3 waves
   - [x] 04-01-PLAN.md — Transport localAddress seam (SocketTransport + FakeTransport) for <ip>.1.1 auto-derive (wave 1)
   - [x] 04-02-PLAN.md — AmsNetId/AmsAddr Comparable ordering + fromIpv4 + testAmsAddrCompare parity (wave 1)
-  - [ ] 04-03-PLAN.md — AmsRouter registry: port allocator + route table + localAddr + 4 router parity ports (wave 2)
+  - [x] 04-03-PLAN.md — AmsRouter registry: port allocator + route table + localAddr + 4 router parity ports (wave 2)
   - [ ] 04-04-PLAN.md — TransportTarget modes + connect() + ERR-02 1861 + dual-mode/ERR-02 integration (wave 3)
 **Research**: NEEDS RESEARCH — the AmsRouter AddRoute handshake over UDP :48899 is the least-documented protocol area; confirm exact packet format, credential exchange, and whether programmatic route registration belongs in v1 or v1.x before committing scope.
 **UI hint**: no
@@ -167,7 +167,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 1. Protocol Framing, Codecs & Golden-Frame Harness | 7/7 | Complete   | 2026-07-03 |
 | 2. TCP Transport, Lifecycle & Correlation | 4/4 | Complete   | 2026-07-03 |
 | 3. Core ADS Commands & Error Mapping | 6/6 | Complete   | 2026-07-04 |
-| 4. AmsRouter & Transport Modes | 2/4 | In Progress|  |
+| 4. AmsRouter & Transport Modes | 3/4 | In Progress|  |
 | 5. Device Notifications as Streams | 0/TBD | Not started | - |
 | 6. Sum (Batched) Commands | 0/TBD | Not started | - |
 | 7. Symbol Access, Browse & Typed Values | 0/TBD | Not started | - |
