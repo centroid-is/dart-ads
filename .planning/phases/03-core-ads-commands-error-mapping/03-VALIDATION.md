@@ -38,8 +38,8 @@ created: 2026-07-04
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| (planner) | — | — | CMD-01..03 | T-3-01 | Read/Write/ReadWrite round-trip + write-back | integration | `dart test test/integration/ads_client_live_test.dart` | ❌ W0 | ⬜ pending |
-| (planner) | — | — | CMD-04..06 | — | State/DeviceInfo/WriteControl typed results | integration | `dart test test/integration/ads_client_live_test.dart` | ❌ W0 | ⬜ pending |
+| (planner) | — | — | CMD-01..03 | T-3-01 | Read/Write/ReadWrite round-trip + write-back | integration | `dart test test/integration/ads_client_test.dart` | ❌ W0 | ⬜ pending |
+| (planner) | — | — | CMD-04..06 | — | State/DeviceInfo/WriteControl typed results | integration | `dart test test/integration/ads_client_test.dart` | ❌ W0 | ⬜ pending |
 | (planner) | — | — | ERR-01 | T-3-02 | Both error levels (AMS errorCode + payload result) → AdsException | unit+integration | `dart test test/unit/ads_error_test.dart` + magic-group live test | ❌ W0 | ⬜ pending |
 | (planner) | — | — | TEST-05 (partial) | — | C++ AdsLibTest command-suite scenarios ported | integration | `dart test -t integration` | ❌ W0 | ⬜ pending |
 
