@@ -125,3 +125,11 @@ None - no external service configuration required (pure-Dart, no pubspec change)
 ---
 *Phase: 04-amsrouter-direct-local-router-transport-modes*
 *Completed: 2026-07-04*
+
+## Self-Check: PASSED
+
+- FOUND: lib/src/router/routing_exception.dart
+- FOUND: lib/src/router/ams_router.dart
+- FOUND: test/unit/router/ams_router_test.dart
+- FOUND: .planning/phases/04-amsrouter-direct-local-router-transport-modes/04-03-SUMMARY.md
+- FOUND commits: 8febffe (Task 1), 0c77265 (Task 2), a69e4c3 (Task 3), 8c7c5d8 (docs)
