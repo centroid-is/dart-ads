@@ -582,7 +582,12 @@ The mock is single-threaded, request-driven, one connection per accept, no timer
 | A4 | `notificationHandle` is the SECOND u32 of the Add response (after `result`) | Wire Layouts 2 | Verified from C++ (`buffer[sizeof(handle)]` read after `AoEResponseHeader`); low risk |
 | A5 | Real PLCs send notifications only AFTER the Add-response on the same ordered TCP stream (the basis for "registration beats first frame") | Pattern 2 | If a PLC could interleave, option A still holds (registration is synchronous with correlation); risk is only to the reasoning, not the fix |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> RESOLVED (planning): (1) `AdsNotification` lives in `protocol/notifications.dart` (plan 05-01);
+> (2) the `slow` tag is declared in dart_test.yaml (plan 05-06 Task 1);
+> (3) `subscribe()` passes mode/cycleTime through without validation, surfacing device errors
+> (e.g. ADSERR_DEVICE_TRANSMODENOTSUPP) via the stream (plan 05-05).
 
 1. **Where does the `AdsNotification` value type live — `client/` or `protocol/`?**
    - What we know: the pure parser (in `protocol/`) must construct it, so it can't depend on `client/`.
