@@ -9,8 +9,8 @@ Requirements for initial release (full AdsLib parity). Each maps to roadmap phas
 
 ### Protocol & Framing
 
-- [ ] **PROTO-01**: Library encodes and decodes the AMS/TCP header (6-byte: reserved u16 + length u32) and the 32-byte AMS header, all fields little-endian
-- [ ] **PROTO-02**: Library reassembles complete AMS frames from a fragmented or coalesced TCP byte stream via a stateful frame assembler (with a max-frame guard)
+- [x] **PROTO-01**: Library encodes and decodes the AMS/TCP header (6-byte: reserved u16 + length u32) and the 32-byte AMS header, all fields little-endian
+- [x] **PROTO-02**: Library reassembles complete AMS frames from a fragmented or coalesced TCP byte stream via a stateful frame assembler (with a max-frame guard)
 - [x] **PROTO-03**: Library correlates each response to its request by invoke-ID (monotonic counter → Completer) with a per-request timeout
 - [x] **PROTO-04**: Library routes unsolicited notification frames (cmd 0x0008, no invoke-ID) to the notification demux instead of the request/response map
 
@@ -78,7 +78,7 @@ Requirements for initial release (full AdsLib parity). Each maps to roadmap phas
 - [x] **TEST-01**: A C++ mock ADS server built via CMake (vendored Beckhoff/ADS) responds with byte-accurate ADS frames
 - [x] **TEST-02**: A golden-frame dump tool emits reference request/response byte vectors, and Dart codec unit tests assert encode AND decode parity against them
 - [x] **TEST-03**: Dart integration tests launch the mock via `Process.start` with an ephemeral port + stdout readiness handshake and tear it down cleanly
-- [ ] **TEST-04**: The mock deliberately fragments and coalesces frames to exercise TCP stream reassembly
+- [x] **TEST-04**: The mock deliberately fragments and coalesces frames to exercise TCP stream reassembly
 - [x] **TEST-05**: Every applicable C++ AdsLibTest/AdsLibOOITest scenario has a Dart counterpart test (AmsAddr compare; router add/del route + local address; port open/close; Read incl. large buffer; ReadDeviceInfo; ReadState; ReadWrite; Write; WriteControl; Notification incl. many-notifications stress; Timeout; Large frames; Parallel read/write). Non-applicable internals (C++ RingBuffer, IpV4 helpers) documented as covered-by-equivalent (FrameAssembler tests) or N/A
 
 ### Packaging & Publishing
@@ -127,11 +127,11 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PROTO-01 | Phase 1 | Pending |
-| PROTO-02 | Phase 1 | Pending |
+| PROTO-01 | Phase 1 | Complete |
+| PROTO-02 | Phase 1 | Complete |
 | TEST-01 | Phase 1 | Complete |
 | TEST-02 | Phase 1 | Complete |
-| TEST-04 | Phase 1 | Pending |
+| TEST-04 | Phase 1 | Complete |
 | TEST-05 | Phase 9 | Complete |
 | TRANS-01 | Phase 2 | Complete |
 | TRANS-02 | Phase 2 | Complete |
