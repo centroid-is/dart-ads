@@ -108,8 +108,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 6 plans in 4 waves
   - [x] 05-01-PLAN.md — Pure notification protocol: AdsTransmissionMode, AdsNotification, FILETIME helpers, Add/Del payload builders + decoders, nested parseNotificationStream (wave 1)
   - [x] 05-02-PLAN.md — Mock server: ADD/DEL handling, write-triggered + burst + 2×2 emission, active-handle-count magic read group (wave 1)
-  - [ ] 05-03-PLAN.md — Golden fixtures (Add/Del req+res, 2×2 stream) via dump_golden + byte-for-byte parity tests (wave 2)
-  - [ ] 05-04-PLAN.md — AmsConnection demux: addNotification/deleteNotification, synchronous registration, 0x08 parse+dispatch, hostile-frame containment (wave 2)
+  - [x] 05-03-PLAN.md — Golden fixtures (Add/Del req+res, 2×2 stream) via dump_golden + byte-for-byte parity tests (wave 2)
+  - [x] 05-04-PLAN.md — AmsConnection demux: addNotification/deleteNotification, synchronous registration, 0x08 parse+dispatch, hostile-frame containment (wave 2)
   - [ ] 05-05-PLAN.md — AdsClient.subscribe() Stream + lifecycle state machine + public barrel exports (wave 3)
   - [ ] 05-06-PLAN.md — Integration + C++ parity ports (testAdsNotification, testManyNotifications leak proof, testEndurance slow) + dart_test.yaml slow tag (wave 4)
 **Research**: NEEDS RESEARCH — notification handle lifecycle on reconnect (when to invalidate, whether to auto re-subscribe, how to signal the consumer) is the subtlest correctness area; the onCancel + disconnect + reconnect state machine needs explicit design before implementation.
@@ -174,7 +174,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 2. TCP Transport, Lifecycle & Correlation | 4/4 | Complete   | 2026-07-03 |
 | 3. Core ADS Commands & Error Mapping | 6/6 | Complete   | 2026-07-04 |
 | 4. AmsRouter & Transport Modes | 4/4 | Complete   | 2026-07-04 |
-| 5. Device Notifications as Streams | 2/6 | In Progress|  |
+| 5. Device Notifications as Streams | 4/6 | In Progress|  |
 | 6. Sum (Batched) Commands | 0/TBD | Not started | - |
 | 7. Symbol Access, Browse & Typed Values | 0/TBD | Not started | - |
 | 8. Dart CLI | 0/TBD | Not started | - |
