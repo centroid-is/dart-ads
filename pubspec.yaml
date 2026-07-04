@@ -1,14 +1,34 @@
 name: dart_ads
 description: >-
-  Pure-Dart client library for the Beckhoff ADS protocol (AMS/TCP),
-  reimplementing the open-source Beckhoff C++ AdsLib in Dart-only code.
-version: 0.0.1
+  Pure-Dart Beckhoff ADS (AMS/TCP) client — read/write/subscribe PLC variables,
+  symbol browse, sum commands, plus the `ads` CLI. Wire-compatible with the C++
+  AdsLib, validated byte-for-byte.
+version: 0.1.0
+
+# No homepage/repository yet (no public remote) — omitting them keeps
+# `dart pub publish --dry-run` warning-free.
+
+topics:
+  - ads
+  - beckhoff
+  - twincat
+  - plc
+  - industrial-automation
+
+# Native VM + Flutter desktop/mobile only. ADS is raw TCP; there is no web
+# support by design (dart:html has no socket access).
+platforms:
+  linux:
+  macos:
+  windows:
+  android:
+  ios:
 
 environment:
   sdk: '>=3.5.0 <4.0.0'
 
 # The `ads` CLI entrypoint (bin/ads.dart). Lets `dart pub global activate` yield
-# an `ads` binary; the .pubignore trimming is Phase 9 (PKG-02).
+# an `ads` binary.
 executables:
   ads: ads
 

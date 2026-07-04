@@ -1,6 +1,23 @@
-# Exclude the C++ golden-frame harness, vendored reference sources, and
-# planning artifacts from the published pub.dev package. None of these are
-# needed by consumers of the pure-Dart library.
+# Keep the published pub.dev package lean: ship only lib/, bin/, example/, and
+# the top-level docs (README, LICENSE, CHANGELOG). Everything below is either a
+# development/test artifact, vendored reference material, or planning state that
+# consumers of the pure-Dart library never need.
+
+# Tests and their fixtures.
+test/
+dart_test.yaml
+
+# C++ golden-frame harness (CMake mock server) and vendored reference sources.
 test_harness/
 third_party/
+
+# GSD planning artifacts and repo-development instructions.
 .planning/
+CLAUDE.md
+
+# CI configuration and coverage output.
+.github/
+coverage/
+
+# Test-parity audit — a development artifact, not a consumer-facing doc.
+PARITY.md
