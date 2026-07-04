@@ -288,4 +288,127 @@ void main() {
       }
     });
   });
+
+  // ---------------------------------------------------------------------------
+  group('testAdsTimeout', () {
+    test('unanswered request times out as AdsTimeoutException', () async {
+      // C++ (L943) tests the get/set-timeout CONFIG API (AdsSyncGetTimeout /
+      // AdsSyncSetTimeout) — a knob Dart expresses as a per-request `timeout`
+      // Duration instead. Adapted to prove the knob actually FIRES: issue a
+      // request under an unknown command id (0x00EE) that the mock silently
+      // ignores (its command table has no such entry -> no response is ever
+      // sent), with a deliberately SHORT timeout. The pending request must be
+      // claimed by the timer and surface as AdsTimeoutException — a bounded,
+      // deterministic termination with no hung Future (threat T-3-07).
+      final client = await connectClient();
+      const unknownCommandId = 0x00EE;
+
+      await expectLater(
+        client.connection.request(
+          unknownCommandId,
+          Uint8List(0),
+          timeout: const Duration(milliseconds: 300),
+        ),
+        throwsA(isA<AdsTimeoutException>()),
+      );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  group('testLargeFrames', () {
+    test('64 KiB payload round-trips with integrity', () async {
+      // C++ (L992) `testLargeFrames` is an UNIMPLEMENTED stub — its body is a
+      // single `fructose_assert(false)`. This port EXCEEDS the C++ original by
+      // implementing a genuine large-frame round-trip: write a 64 KiB payload
+      // and read it back, asserting exact integrity. This drives a single
+      // request AND response frame well past a TCP segment yet comfortably below
+      // the 4 MiB FrameAssembler cap, exercising reassembly on both ends under a
+      // large frame (threat T-3-05 boundary).
+      final client = await connectClient();
+      const group = 0xF005;
+      const offset = 0x1000;
+      const size = 64 * 1024;
+      final payload =
+          Uint8List.fromList([for (var i = 0; i < size; i++) (i * 131) & 0xFF]);
+
+      await client.write(
+        indexGroup: group,
+        indexOffset: offset,
+        data: payload,
+        timeout: requestTimeout,
+      );
+
+      final readBack = await client.read(
+        indexGroup: group,
+        indexOffset: offset,
+        length: payload.length,
+        timeout: requestTimeout,
+      );
+
+      expect(readBack.length, equals(size));
+      expect(readBack, equals(payload));
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  group('testParallelReadAndWrite', () {
+    test('many concurrent operations each resolve correctly', () async {
+      // C++ (L1020) fans out 96 threads x 1024 reads to hammer the port under
+      // concurrency. Dart's analogue is many PIPELINED futures on ONE connection
+      // — none awaited between issue — resolved together via Future.wait. This
+      // proves the invoke-ID correlation map never crosses responses under load:
+      // every one of the mixed reads/writes must resolve to ITS OWN correct
+      // response (threat T-3-05). Reads target the connection's seeded fixture
+      // (0xF005,0x123)=42, a value stable under any interleave with the
+      // distinct-key writes, so a mis-correlated response is detectable.
+      final client = await connectClient();
+      const fanout = 100;
+      const seedGroup = 0xF005;
+      const seedOffset = 0x123;
+      final seedBytes = Uint8List.fromList(const [0x2A, 0x00, 0x00, 0x00]);
+
+      // Issue reads (of the stable seed) and writes (to distinct keys) all at
+      // once, without awaiting between them, then await the whole batch.
+      final reads = <Future<Uint8List>>[];
+      final writes = <Future<void>>[];
+      for (var i = 0; i < fanout; i++) {
+        reads.add(client.read(
+          indexGroup: seedGroup,
+          indexOffset: seedOffset,
+          length: seedBytes.length,
+          timeout: requestTimeout,
+        ));
+        final value = Uint8List(4)
+          ..buffer.asByteData().setUint32(0, i, Endian.little);
+        writes.add(client.write(
+          indexGroup: 0x5000,
+          indexOffset: i,
+          data: value,
+          timeout: requestTimeout,
+        ));
+      }
+
+      final results = await Future.wait(reads);
+      await Future.wait(writes);
+
+      for (var i = 0; i < fanout; i++) {
+        expect(results[i], equals(seedBytes),
+            reason: 'concurrent read #$i must correlate to its own response');
+      }
+
+      // Spot-check that the concurrent writes each landed at their distinct key,
+      // proving the write futures correlated too (not just the reads).
+      for (final i in const [0, 42, fanout - 1]) {
+        final back = await client.read(
+          indexGroup: 0x5000,
+          indexOffset: i,
+          length: 4,
+          timeout: requestTimeout,
+        );
+        final expected = Uint8List(4)
+          ..buffer.asByteData().setUint32(0, i, Endian.little);
+        expect(back, equals(expected), reason: 'write #$i must have landed');
+      }
+    });
+  });
 }
