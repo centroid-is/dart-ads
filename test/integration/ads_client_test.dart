@@ -328,5 +328,83 @@ void main() {
       expect(results[2].valueOrThrow,
           equals(Uint8List.fromList(const [0xDE, 0xAD, 0xBE])));
     });
+
+    test('partial failure alignment', () async {
+      // SUM-04 litmus (threat T-6-03): a batch where item k targets the magic
+      // kErrResultGroup (its inner indexOffset carrying a real ADS code)
+      // surfaces item k's error as a VALUE while every OTHER item still carries
+      // correct data at the correct offset — and the batch itself never throws.
+      final client = await connectClient();
+
+      // Seed the surrounding keys with distinct data via sumWrite (write-back).
+      const g = 0x4050;
+      final seeds = <int, Uint8List>{
+        0x00: Uint8List.fromList(const [0xA0, 0xA1, 0xA2, 0xA3]),
+        0x10: Uint8List.fromList(const [0xB0, 0xB1, 0xB2, 0xB3]),
+        0x20: Uint8List.fromList(const [0xC0, 0xC1, 0xC2, 0xC3]),
+      };
+      await client.sumWrite(<SumWriteRequest>[
+        for (final e in seeds.entries)
+          SumWriteRequest(indexGroup: g, indexOffset: e.key, data: e.value),
+      ], timeout: requestTimeout);
+
+      // Batch: item 0 ok, item 1 (k) injects error 0x703, items 2 & 3 ok.
+      const kErrCode = 0x703; // ADSERR_DEVICE_INVALIDOFFSET
+      final reads = <SumReadRequest>[
+        SumReadRequest(indexGroup: g, indexOffset: 0x00, length: 4),
+        SumReadRequest(
+            indexGroup: kErrResultGroup, indexOffset: kErrCode, length: 4),
+        SumReadRequest(indexGroup: g, indexOffset: 0x10, length: 4),
+        SumReadRequest(indexGroup: g, indexOffset: 0x20, length: 4),
+      ];
+
+      // The batch must resolve normally (NO throw) despite the mid-batch error.
+      final results = await client.sumRead(reads, timeout: requestTimeout);
+
+      expect(results, hasLength(4));
+      // Item k failed with exactly the injected code and carries no data.
+      expect(results[1].isSuccess, isFalse);
+      expect(results[1].errorCode, equals(kErrCode));
+      // Surrounding items carry the correct seeded data at the correct offset —
+      // proof the failed item did not drift the data region (SUM-04 alignment).
+      expect(results[0].valueOrThrow, equals(seeds[0x00]));
+      expect(results[2].valueOrThrow, equals(seeds[0x10]));
+      expect(results[3].valueOrThrow, equals(seeds[0x20]));
+    });
+
+    test('large 100-item single frame', () async {
+      // A 100-item batch travels in ONE ReadWrite frame (the Phase-3
+      // concurrency lesson exercised in a single request) and returns exactly
+      // 100 results. Each key is seeded so every item proves distinct data
+      // survived the single-frame round-trip. Stays well under kMaxFrameBytes
+      // (threat T-6-02).
+      final client = await connectClient();
+
+      const n = 100;
+      const g = 0x4060;
+      final writes = <SumWriteRequest>[
+        for (var i = 0; i < n; i++)
+          SumWriteRequest(
+            indexGroup: g,
+            indexOffset: i * 4,
+            data: Uint8List.fromList([i & 0xFF, (i + 1) & 0xFF, 0x00, 0x00]),
+          ),
+      ];
+      final w = await client.sumWrite(writes, timeout: requestTimeout);
+      expect(w, hasLength(n));
+      expect(w.every((r) => r.isSuccess), isTrue);
+
+      final results = await client.sumRead(<SumReadRequest>[
+        for (var i = 0; i < n; i++)
+          SumReadRequest(indexGroup: g, indexOffset: i * 4, length: 4),
+      ], timeout: requestTimeout);
+
+      expect(results, hasLength(n),
+          reason: '100 items must return 100 results from a single frame');
+      expect(results.every((r) => r.isSuccess), isTrue);
+      for (var i = 0; i < n; i++) {
+        expect(results[i].valueOrThrow, equals(writes[i].data));
+      }
+    });
   });
 }
