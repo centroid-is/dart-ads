@@ -85,7 +85,8 @@ void main() {
       final router = AmsRouter()..setLocalAddress(localNetId);
       addTearDown(router.close);
       // DirectTarget resolves via the local route table first (0x0007 gate).
-      router.addRoute(targetNetId, '127.0.0.1', port: directServer.port);
+      expect(router.addRoute(targetNetId, '127.0.0.1', port: directServer.port),
+          0);
 
       final directClient = await router.connect(
         targetNetId,
@@ -134,7 +135,7 @@ void main() {
 
       final router = AmsRouter()..setLocalAddress(localNetId);
       addTearDown(router.close);
-      router.addRoute(targetNetId, '127.0.0.1', port: server.port);
+      expect(router.addRoute(targetNetId, '127.0.0.1', port: server.port), 0);
 
       final client = await router.connect(
         targetNetId,
@@ -166,7 +167,8 @@ void main() {
       );
     });
 
-    test('local-router-mode timeout stays a bare AdsTimeoutException', () async {
+    test('local-router-mode timeout stays a bare AdsTimeoutException',
+        () async {
       // Same unanswered-request staging, but LocalRouterTarget must NOT enrich:
       // a real router returns its own errors, so no false 0x0745 (T-4-02).
       final server = await startMockServer(args: ['--delay-ms', '1']);

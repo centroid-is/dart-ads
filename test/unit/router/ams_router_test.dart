@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:dart_ads/dart_ads.dart';
 import 'package:dart_ads/src/transport/fake_transport.dart';
@@ -12,6 +13,15 @@ import 'package:test/test.dart';
 final class _HangingDialTransport extends FakeTransport {
   @override
   Future<void> connect(String host, int port) => Completer<void>().future;
+}
+
+/// A [FakeTransport] whose dial fails outright — the unit-level stand-in for a
+/// refused connection (host up, port closed).
+final class _RefusingDialTransport extends FakeTransport {
+  @override
+  Future<void> connect(String host, int port) async {
+    throw const AdsConnectionException('connection refused (test stub)');
+  }
 }
 
 // =============================================================================
@@ -492,6 +502,137 @@ void main() {
       await older.connection.close();
       expect(router.getConnection(netIdA), same(newer.connection));
       await router.close();
+    });
+  });
+
+  // The connect()-flow error policy the phase doc names as threat mitigations:
+  // T-4-01 (exhaustion -> typed 0x0508, dial failure -> slot rollback) and
+  // T-4-02 (ONLY the direct-mode request timeout is enriched to 0x0745; every
+  // other error crosses the wrapper unchanged).
+  group('connect_error_policy', () {
+    final localNetId = AmsNetId(const [1, 2, 3, 4, 5, 6]);
+
+    test('connect() with all 128 slots taken throws typed 0x0508 (T-4-01)',
+        () async {
+      final router = fakeRouter()..setLocalAddress(localNetId);
+      for (var i = 0; i < AmsRouter.numPortsMax; i++) {
+        expect(router.openPort(), isNot(0));
+      }
+
+      await expectLater(
+        router.connect(
+          netIdA,
+          AmsPort.plcTc3,
+          mode: const LocalRouterTarget(host: hostA),
+        ),
+        throwsA(
+          isA<AdsException>()
+              .having((e) => e.code, 'code', 0x0508)
+              .having((e) => e.name, 'name', 'ROUTERERR_NOMOREQUEUES'),
+        ),
+      );
+    });
+
+    test('a failed dial rolls the slot back (T-4-01)', () async {
+      final router = AmsRouter(
+        transportFactory: (host, port) => _RefusingDialTransport(),
+      )..setLocalAddress(localNetId);
+
+      await expectLater(
+        router.connect(
+          netIdA,
+          AmsPort.plcTc3,
+          mode: const LocalRouterTarget(host: hostA),
+        ),
+        throwsA(isA<AdsConnectionException>()),
+      );
+      // The rollback returned the slot: the next allocation is 30000 again.
+      expect(router.openPort(), AmsRouter.portBase);
+    });
+
+    test('direct-mode request timeout -> 0x0745 naming the source NetId',
+        () async {
+      final router = fakeRouter()..setLocalAddress(localNetId);
+      expect(router.addRoute(netIdA, hostA), 0);
+      final client = await router.connect(
+        netIdA,
+        AmsPort.plcTc3,
+        mode: const DirectTarget(hostA),
+      );
+
+      // No reply is ever fed -> the request times out -> ERR-02 enrichment.
+      await expectLater(
+        client.connection.request(
+          AdsCommandId.read,
+          Uint8List(12),
+          timeout: const Duration(milliseconds: 30),
+        ),
+        throwsA(
+          allOf(
+            isA<AdsRoutingException>()
+                .having((e) => e.code, 'code', 0x0745)
+                .having((e) => e.netId, 'netId', localNetId)
+                .having((e) => e.toString(), 'names the source NetId',
+                    contains(localNetId.dotted)),
+            isNot(isA<AdsTimeoutException>()),
+          ),
+        ),
+      );
+      await router.close();
+    });
+
+    test('local-router-mode request timeout stays a bare AdsTimeoutException',
+        () async {
+      final router = fakeRouter()..setLocalAddress(localNetId);
+      final client = await router.connect(
+        netIdA,
+        AmsPort.plcTc3,
+        mode: const LocalRouterTarget(host: hostA),
+      );
+
+      await expectLater(
+        client.connection.request(
+          AdsCommandId.read,
+          Uint8List(12),
+          timeout: const Duration(milliseconds: 30),
+        ),
+        throwsA(allOf(isA<AdsTimeoutException>(), isNot(isA<AdsException>()))),
+      );
+      await router.close();
+    });
+
+    test('a disconnect crosses the direct-mode wrapper un-enriched (T-4-02)',
+        () async {
+      final transports = <FakeTransport>[];
+      final router = AmsRouter(
+        transportFactory: (host, port) {
+          final transport = FakeTransport();
+          transports.add(transport);
+          return transport;
+        },
+      )..setLocalAddress(localNetId);
+      expect(router.addRoute(netIdA, hostA), 0);
+      final client = await router.connect(
+        netIdA,
+        AmsPort.plcTc3,
+        mode: const DirectTarget(hostA),
+      );
+
+      final pending = client.connection.request(
+        AdsCommandId.read,
+        Uint8List(12),
+      );
+      // Peer drops the connection mid-request: the disconnect fan-out must
+      // surface as the ORIGINAL AdsConnectionException family, never masked
+      // as a 0x0745 route problem.
+      transports.single.simulateDisconnect();
+
+      await expectLater(
+        pending,
+        throwsA(
+          allOf(isA<AdsConnectionException>(), isNot(isA<AdsException>())),
+        ),
+      );
     });
   });
 }
