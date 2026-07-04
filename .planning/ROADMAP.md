@@ -141,7 +141,13 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. User can browse the PLC symbol table and get parsed variable-length entries (name, type, size, iGroup, iOffset)
   3. PLC scalar types (BOOL, BYTE/USINT, WORD/UINT, INT, DWORD/UDINT, DINT, REAL, LREAL, STRING, WSTRING) convert to/from Dart values
   4. Values with no type conversion are accessible via a raw `Uint8List` escape hatch
-**Plans**: TBD
+**Plans**: 6 plans in 3 waves
+  - [ ] 07-01-PLAN.md — Pure AdsSymbolEntry blob parser (entryLength advancement + hostile-blob guards) (wave 1)
+  - [ ] 07-02-PLAN.md — Pure LE value codec (scalars + STRING/WSTRING, overflow-guarded) (wave 1)
+  - [ ] 07-03-PLAN.md — Mock: 4-symbol table + 0xF003/5/6/B/C dispatch + NUL-tolerant lookup + sym-handle-count magic group (wave 1)
+  - [ ] 07-04-PLAN.md — dump_golden symbol fixtures (handle req/res, uploadinfo, 2-symbol padded blob) + byte-parity test (wave 2)
+  - [ ] 07-05-PLAN.md — AdsClient handle lifecycle + AdsHandle RAII + browse + typed methods + barrel exports (wave 2)
+  - [ ] 07-06-PLAN.md — Live integration: handle leak proof + staleness, browse, typed round-trips (wave 3)
 **UI hint**: no
 
 ### Phase 8: Dart CLI

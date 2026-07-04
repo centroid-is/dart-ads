@@ -373,7 +373,7 @@ String decodeWString(Uint8List buf) {           // UTF-16LE, NUL(0x0000)-termina
 
 ## Open Questions
 
-1. **Invalid-handle error code: 0x710 vs 0x1809?**
+1. **Invalid-handle error code: 0x710 vs 0x1809?** — **RESOLVED (planning, 2026-07-04):** mock returns **0x710** for BOTH unknown-name and invalid/released-handle (A4 frozen); AdsHandle invalidates on 0x710/0x711. Locked into Plans 03/05/06.
    - Known: real TwinCAT returns a device error on unknown handle; 0x710 (SYMBOLNOTFOUND) and 0x1809 (SYMBOLNOTACTIVE, in ads_error.dart:136) are both plausible.
    - Recommendation: mock returns 0x710 for both unknown-name and invalid-handle (simplest, both in table); document choice; AdsHandle invalidates on either.
 
