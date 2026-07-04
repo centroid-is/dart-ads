@@ -376,6 +376,61 @@ static void sendResponse(int fd, const std::vector<uint8_t>& frame, TransmitMode
     }
 }
 
+// ---- 0x08 device-notification emission (Phase 5) ---------------------------
+// The unsolicited notification stream is doubly nested:
+//   length u32, stamps u32,
+//   per stamp { timestamp u64 (FILETIME), sampleCount u32,
+//               per sample { handle u32, size u32, data[size] } }
+// These value types model one crafted frame; emitNotification serialises them,
+// backfills the self-describing `length`, wraps as a DEVICE_NOTIFICATION (0x08)
+// frame addressed TO the client, and sends it immediately via sendResponse.
+struct NotifySample {
+    uint32_t handle;
+    std::vector<uint8_t> data;
+};
+struct NotifyStamp {
+    uint64_t timestamp; // FILETIME: 100ns ticks since 1601-01-01 UTC
+    std::vector<NotifySample> samples;
+};
+
+// A deterministic base FILETIME (a whole number of microseconds, i.e. a multiple
+// of 10) so the Dart FILETIME->DateTime round-trip is lossless in the goldens.
+// 132000000000000000 ≈ 2019-03-19T14:40:00Z.
+static const uint64_t kMockFiletimeBase = 132000000000000000ull;
+
+static void emitNotification(int fd, TransmitMode mode, size_t fragmentN,
+                             std::vector<uint8_t>& coalesceBuf,
+                             const AmsNetId& rTarget, uint16_t rTargetPort,
+                             const AmsNetId& rSource, uint16_t rSourcePort,
+                             const std::vector<NotifyStamp>& stamps)
+{
+    std::vector<uint8_t> p;
+    putU32(p, 0); // length placeholder (backfilled below)
+    putU32(p, static_cast<uint32_t>(stamps.size()));
+    for (const NotifyStamp& st : stamps) {
+        putU64(p, st.timestamp);
+        putU32(p, static_cast<uint32_t>(st.samples.size()));
+        for (const NotifySample& sm : st.samples) {
+            putU32(p, sm.handle);
+            putU32(p, static_cast<uint32_t>(sm.data.size()));
+            p.insert(p.end(), sm.data.begin(), sm.data.end());
+        }
+    }
+    // Backfill the self-describing length = all bytes following the length field.
+    const uint32_t length = static_cast<uint32_t>(p.size() - 4);
+    p[0] = static_cast<uint8_t>(length & 0xFF);
+    p[1] = static_cast<uint8_t>((length >> 8) & 0xFF);
+    p[2] = static_cast<uint8_t>((length >> 16) & 0xFF);
+    p[3] = static_cast<uint8_t>((length >> 24) & 0xFF);
+
+    Frame f(p.size(), p.data());
+    // invokeId 0: unsolicited (Dart demuxes 0x08 on commandId before invokeId).
+    std::vector<uint8_t> frame =
+        wrapResponse(f, AoEHeader::DEVICE_NOTIFICATION, rTarget, rTargetPort,
+                     rSource, rSourcePort, 0);
+    sendResponse(fd, frame, mode, fragmentN, coalesceBuf);
+}
+
 // ---- Live accept loop (built in Phase 1; exercised over a socket in Phase 2) -
 //
 // delayMs > 0 (--delay-ms): defer the FIRST response of each connection and
@@ -386,7 +441,7 @@ static void sendResponse(int fd, const std::vector<uint8_t>& frame, TransmitMode
 //   must fan out on the client. Both are thread-free and orthogonal to
 //   --fragment/--coalesce (timing/lifecycle vs segmentation).
 static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN,
-                     int delayMs, int closeAfter)
+                     int delayMs, int closeAfter, int notifyBurst)
 {
     const int listenFd = socket(AF_INET, SOCK_STREAM, 0);
     if (listenFd < 0) {
@@ -563,6 +618,21 @@ static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN,
                             length > kMaxFrameBytes) {
                             break; // malformed/hostile: no response
                         }
+                        // Magic active-handle-count group: return the current
+                        // number of live notification handles as a u32 — the
+                        // in-band leak proof (read 0 / N / 0 across the test).
+                        if (group == kNotifyCountGroup) {
+                            std::vector<uint8_t> p;
+                            putU32(p, 0); // result = 0
+                            putU32(p, 4); // readLength = 4
+                            putU32(p, static_cast<uint32_t>(notes.size()));
+                            Frame f(p.size(), p.data());
+                            res = wrapResponse(f, AoEHeader::READ, rTarget,
+                                               rTargetPort, rSource, rSourcePort,
+                                               rInvoke);
+                            haveRes = true;
+                            break;
+                        }
                         std::vector<uint8_t> data(length, 0);
                         const auto it = store.find({ group, offset });
                         if (it != store.end()) {
@@ -594,8 +664,53 @@ static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN,
                             static_cast<size_t>(length) > bodyLen - 12) {
                             break; // malformed/short: data not fully present
                         }
+                        // Magic 2x2 group: emit ONE crafted frame with 2 stamps x
+                        // 2 samples (distinct timestamps/handles/data) that proves
+                        // the nested parser, then answer a normal WRITE result 0.
+                        // Deliberately NOT stored — this group is a pure trigger.
+                        if (group == kNotifyBurst2x2Group) {
+                            emitNotification(fd, mode, fragmentN, coalesceBuf,
+                                rTarget, rTargetPort, rSource, rSourcePort,
+                                {
+                                    { kMockFiletimeBase,
+                                      { { 1u, { 0xAA, 0xBB } },
+                                        { 2u, { 0xCC, 0xDD } } } },
+                                    { kMockFiletimeBase + 100000000ull,
+                                      { { 1u, { 0x11, 0x22 } },
+                                        { 2u, { 0x33, 0x44 } } } },
+                                });
+                            std::vector<uint8_t> p;
+                            putU32(p, 0); // result = 0
+                            Frame f(p.size(), p.data());
+                            res = wrapResponse(f, AoEHeader::WRITE, rTarget,
+                                               rTargetPort, rSource, rSourcePort,
+                                               rInvoke);
+                            haveRes = true;
+                            break;
+                        }
                         store[{ group, offset }] =
                             std::vector<uint8_t>(body + 12, body + 12 + length);
+                        // Write-triggered serverOnChange: emit ONE 1-stamp x
+                        // 1-sample frame to every handle watching this exact
+                        // (group, offset), carrying the written bytes truncated/
+                        // padded to that handle's cbLength.
+                        for (const auto& kv : notes) {
+                            if (kv.second[0] == group && kv.second[1] == offset) {
+                                const uint32_t h = kv.first;
+                                const uint32_t cb = kv.second[2];
+                                std::vector<uint8_t> data(cb, 0);
+                                const size_t ncopy = std::min(
+                                    static_cast<size_t>(cb),
+                                    static_cast<size_t>(length));
+                                std::copy(body + 12, body + 12 + ncopy,
+                                          data.begin());
+                                emitNotification(fd, mode, fragmentN, coalesceBuf,
+                                                 rTarget, rTargetPort, rSource,
+                                                 rSourcePort,
+                                                 { { kMockFiletimeBase,
+                                                     { { h, data } } } });
+                            }
+                        }
                         std::vector<uint8_t> p;
                         putU32(p, 0); // result = 0
                         Frame f(p.size(), p.data());
@@ -689,6 +804,18 @@ static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN,
                         }
                         const uint32_t handle = nextHandle++;
                         notes[handle] = { group, offset, cbLength, transMode };
+                        // --notify-burst N: emit N single-sample frames for the
+                        // new handle IMMEDIATELY, BEFORE the ADD response goes out,
+                        // so notifications race ahead of / share the TCP chunk with
+                        // the response — deliberately exposing the first-listen race
+                        // the Dart client must survive (Pitfall 2 in 05-RESEARCH).
+                        for (int b = 0; b < notifyBurst; ++b) {
+                            const std::vector<uint8_t> data(cbLength, 0);
+                            emitNotification(fd, mode, fragmentN, coalesceBuf,
+                                             rTarget, rTargetPort, rSource, rSourcePort,
+                                             { { kMockFiletimeBase,
+                                                 { { handle, data } } } });
+                        }
                         std::vector<uint8_t> p;
                         putU32(p, 0);      // result = 0 (success)
                         putU32(p, handle); // PLC-assigned notification handle
@@ -788,6 +915,7 @@ int main(int argc, char** argv)
     size_t fragmentN = 0;
     int delayMs = 0;   // 0 => no first-response deferral
     int closeAfter = 0; // 0 => never force-close mid-request
+    int notifyBurst = 0; // 0 => no immediate emission on ADD
     bool selftest = false;
     std::string goldenPath = "test/golden/read_device_info_res.hex";
 
@@ -826,6 +954,12 @@ int main(int argc, char** argv)
                 return 2;
             }
             closeAfter = std::atoi(argv[++i]);
+        } else if (arg == "--notify-burst") {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "--notify-burst requires a value\n");
+                return 2;
+            }
+            notifyBurst = std::atoi(argv[++i]);
         } else {
             fprintf(stderr, "unknown argument: %s\n", arg.c_str());
             return 2;
@@ -835,5 +969,5 @@ int main(int argc, char** argv)
     if (selftest) {
         return runSelftest(goldenPath);
     }
-    return runServer(fixedPort, mode, fragmentN, delayMs, closeAfter);
+    return runServer(fixedPort, mode, fragmentN, delayMs, closeAfter, notifyBurst);
 }
