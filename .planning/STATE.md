@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: ROADMAP.md and STATE.md written; REQUIREMENTS.md traceability populated.
-last_updated: "2026-07-04T13:37:39.599Z"
-last_activity: 2026-07-04 -- Phase 05 execution started
+last_updated: "2026-07-04T14:31:34.550Z"
+last_activity: 2026-07-04
 progress:
   total_phases: 9
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 27
-  completed_plans: 21
-  percent: 44
+  completed_plans: 27
+  percent: 56
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-07-03)
 ## Current Position
 
 Phase: 05 (Device Notifications as Streams) — EXECUTING
-Plan: 1 of 6
-Status: Executing Phase 05
-Last activity: 2026-07-04 -- Phase 05 execution started
+Plan: 2 of 6
+Status: Ready to execute
+Last activity: 2026-07-04
 
 Progress: [██████████] 100%
 
@@ -60,6 +60,7 @@ Progress: [██████████] 100%
 | Phase 02 P04 | 7min | 2 tasks | 2 files |
 | Phase 03 P06 | 9min | 2 tasks | 1 files |
 | Phase 04 P04 | 11min | 2 tasks | 5 files |
+| Phase 05 P06 | 20min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -84,6 +85,8 @@ Recent decisions affecting current work:
 - [Phase ?]: [Phase 02]: Live integration tests use an explicit 10s per-request timeout so reorder/disconnect outcomes are provably correlation/connection results, never a timeout firing.
 - [Phase ?]: [Phase 03]: AdsLibTest parity ports use 1:1 C++-named test groups so the Phase-9 audit (TEST-05) confirms coverage mechanically.
 - [Phase ?]: [Phase 03]: testAdsTimeout adapts the C++ get/set-timeout config API to a real per-request timeout firing; port-handle error cases map to the Dart connection lifecycle (covered-by-equivalent).
+- [Phase ?]: [Phase 05]: slow tag uses skip: + --run-skipped so the endurance soak is excluded from every default/CI run yet remains runnable on demand (only package:test mechanism satisfying both).
+- [Phase ?]: [Phase 05]: mock --notify-burst emits AFTER the Add-response; burst-before-response is unroutable by any client, so the winnable same-chunk race the synchronous registration solves needs burst-after-response.
 
 ### Pending Todos
 
@@ -107,6 +110,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-04T12:14:07.589Z
+Last session: 2026-07-04T14:29:36.975Z
 Stopped at: ROADMAP.md and STATE.md written; REQUIREMENTS.md traceability populated.
 Resume file: None

@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: TCP Transport, Connection Lifecycle & Invoke-ID Correlation** - Live socket, request/response correlation, and disconnect fan-out (completed 2026-07-03)
 - [x] **Phase 3: Core ADS Commands & Error Mapping** - Read/Write/ReadWrite/ReadState/WriteControl/ReadDeviceInfo with typed exceptions (completed 2026-07-04)
 - [x] **Phase 4: AmsRouter & Direct / Local-Router Transport Modes** - NetId routing, runtime transport selection, and actionable 1861 route errors (completed 2026-07-04)
-- [ ] **Phase 5: Device Notifications as Streams** - Subscribe/cancel as Dart Streams with nested stamp/sample demux and handle lifecycle
+- [x] **Phase 5: Device Notifications as Streams** - Subscribe/cancel as Dart Streams with nested stamp/sample demux and handle lifecycle (completed 2026-07-04)
 - [ ] **Phase 6: Sum (Batched) Commands** - Batched read/write/readwrite with per-item partial-failure results
 - [ ] **Phase 7: Symbol Access, Browse & Typed Values** - Handle-by-name, symbol table browse, and scalar type conversion
 - [ ] **Phase 8: Dart CLI** - browse/read/write/subscribe/pull/push/action operator tool over the full library
@@ -111,7 +111,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   - [x] 05-03-PLAN.md — Golden fixtures (Add/Del req+res, 2×2 stream) via dump_golden + byte-for-byte parity tests (wave 2)
   - [x] 05-04-PLAN.md — AmsConnection demux: addNotification/deleteNotification, synchronous registration, 0x08 parse+dispatch, hostile-frame containment (wave 2)
   - [x] 05-05-PLAN.md — AdsClient.subscribe() Stream + lifecycle state machine + public barrel exports (wave 3)
-  - [ ] 05-06-PLAN.md — Integration + C++ parity ports (testAdsNotification, testManyNotifications leak proof, testEndurance slow) + dart_test.yaml slow tag (wave 4)
+  - [x] 05-06-PLAN.md — Integration + C++ parity ports (testAdsNotification, testManyNotifications leak proof, testEndurance slow) + dart_test.yaml slow tag (wave 4)
 **Research**: NEEDS RESEARCH — notification handle lifecycle on reconnect (when to invalidate, whether to auto re-subscribe, how to signal the consumer) is the subtlest correctness area; the onCancel + disconnect + reconnect state machine needs explicit design before implementation.
 **UI hint**: no
 
@@ -174,7 +174,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 2. TCP Transport, Lifecycle & Correlation | 4/4 | Complete   | 2026-07-03 |
 | 3. Core ADS Commands & Error Mapping | 6/6 | Complete   | 2026-07-04 |
 | 4. AmsRouter & Transport Modes | 4/4 | Complete   | 2026-07-04 |
-| 5. Device Notifications as Streams | 5/6 | In Progress|  |
+| 5. Device Notifications as Streams | 6/6 | Complete   | 2026-07-04 |
 | 6. Sum (Batched) Commands | 0/TBD | Not started | - |
 | 7. Symbol Access, Browse & Typed Values | 0/TBD | Not started | - |
 | 8. Dart CLI | 0/TBD | Not started | - |
