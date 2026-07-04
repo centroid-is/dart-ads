@@ -60,6 +60,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cerrno>
 #include <csignal>
@@ -108,6 +109,18 @@ static const size_t kAmsErrorCodeOffset = 24;
 static const uint32_t kErrResultGroup = 0xE7700000u;
 static const uint32_t kErrAmsGroup = 0xE7700001u;
 
+// ---- Magic notification fixtures (Phase 5) --------------------------------
+// Two more obviously-synthetic index groups drive the deterministic
+// notification tests (05-06):
+//   kNotifyCountGroup    -> a Read returns the current active-handle count as a
+//                           u32 (the in-band handle-leak proof: read 0 before
+//                           subscribing, N after N adds, 0 after cancel/close).
+//   kNotifyBurst2x2Group -> a Write emits ONE crafted 0x08 frame with 2 stamps
+//                           x 2 samples (distinct timestamps/handles/data) — the
+//                           fixture that proves the nested stamp/sample parser.
+static const uint32_t kNotifyCountGroup = 0xE7700002u;
+static const uint32_t kNotifyBurst2x2Group = 0xE7700003u;
+
 // Inbound max-frame guard, mirroring the Dart FrameAssembler's 4 MiB cap: a
 // single hostile 6-byte wrapper declaring a multi-GiB length must not make
 // the server buffer everything the peer sends. The cap also keeps
@@ -128,6 +141,15 @@ static void putU16(std::vector<uint8_t>& v, uint16_t x)
 static void putU32(std::vector<uint8_t>& v, uint32_t x)
 {
     for (int i = 0; i < 4; ++i) {
+        v.push_back(static_cast<uint8_t>((x >> (8 * i)) & 0xFF));
+    }
+}
+
+// 8-byte little-endian writer, mirroring putU32 (8 shift iterations). Used for
+// the FILETIME timestamp (u64) at the head of every 0x08 notification stamp.
+static void putU64(std::vector<uint8_t>& v, uint64_t x)
+{
+    for (int i = 0; i < 8; ++i) {
         v.push_back(static_cast<uint8_t>((x >> (8 * i)) & 0xFF));
     }
 }
@@ -425,6 +447,12 @@ static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN,
         // i.e. each startMockServer() in each integration test — begins CLEAN and
         // write-back persists only "within a session", never leaking across tests.
         std::map<std::pair<uint32_t, uint32_t>, std::vector<uint8_t>> store;
+        // Per-connection notification table: handle -> {group, offset, cbLength,
+        // transMode}. Declared here (like `store`) so each accepted connection —
+        // i.e. each integration test — starts CLEAN and handle numbers never leak
+        // across tests. nextHandle starts at 1 and increments per successful ADD.
+        std::map<uint32_t, std::array<uint32_t, 4>> notes;
+        uint32_t nextHandle = 1;
         uint16_t curAdsState = static_cast<uint16_t>(ADSSTATE_RUN); // 5 — seed to RUN
         uint16_t curDeviceState = 0;
         // Seed one fixture matching the read_req golden key so a pure Read (with no
@@ -641,6 +669,52 @@ static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN,
                         Frame f(p.size(), p.data());
                         res = wrapResponse(f, AoEHeader::WRITE_CONTROL, rTarget,
                                            rTargetPort, rSource, rSourcePort, rInvoke);
+                        haveRes = true;
+                        break;
+                    }
+                    case AoEHeader::ADD_DEVICE_NOTIFICATION: {
+                        // AddDeviceNotification (0x06): 40-byte request —
+                        // group u32, offset u32, cbLength u32, transMode u32,
+                        // maxDelay u32, cycleTime u32, then 16 reserved bytes.
+                        // Every field is bounds-checked; a short body yields no
+                        // response (existing short-frame discipline, threat T-5-07).
+                        uint32_t group, offset, cbLength, transMode, maxDelay, cycleTime;
+                        if (!getU32(body, bodyLen, 0, group) ||
+                            !getU32(body, bodyLen, 4, offset) ||
+                            !getU32(body, bodyLen, 8, cbLength) ||
+                            !getU32(body, bodyLen, 12, transMode) ||
+                            !getU32(body, bodyLen, 16, maxDelay) ||
+                            !getU32(body, bodyLen, 20, cycleTime)) {
+                            break; // malformed/short: no response
+                        }
+                        const uint32_t handle = nextHandle++;
+                        notes[handle] = { group, offset, cbLength, transMode };
+                        std::vector<uint8_t> p;
+                        putU32(p, 0);      // result = 0 (success)
+                        putU32(p, handle); // PLC-assigned notification handle
+                        Frame f(p.size(), p.data());
+                        res = wrapResponse(f, AoEHeader::ADD_DEVICE_NOTIFICATION,
+                                           rTarget, rTargetPort, rSource, rSourcePort,
+                                           rInvoke);
+                        haveRes = true;
+                        break;
+                    }
+                    case AoEHeader::DEL_DEVICE_NOTIFICATION: {
+                        // DeleteDeviceNotification (0x07): handle u32 -> result u32.
+                        // A known handle is erased (result 0); an unknown handle
+                        // returns ADSERR_CLIENT_REMOVEHASH (0x752) and never frees
+                        // an unrelated entry (threat T-5-08 / C++ parity).
+                        uint32_t handle;
+                        if (!getU32(body, bodyLen, 0, handle)) {
+                            break; // malformed/short: no response
+                        }
+                        const uint32_t result = notes.erase(handle) ? 0u : 0x752u;
+                        std::vector<uint8_t> p;
+                        putU32(p, result);
+                        Frame f(p.size(), p.data());
+                        res = wrapResponse(f, AoEHeader::DEL_DEVICE_NOTIFICATION,
+                                           rTarget, rTargetPort, rSource, rSourcePort,
+                                           rInvoke);
                         haveRes = true;
                         break;
                     }
