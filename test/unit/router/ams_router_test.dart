@@ -33,8 +33,17 @@ import 'package:test/test.dart';
 //   * ONE-CONNECTION-PER-NETID divergence. The C++ router shares one refcounted
 //     AmsConnection across NetIds pointing at the same host; this Dart port keeps
 //     one connection per target NetId. Every parity assertion here checks only
-//     the return code + a non-null connection (never connection identity), so the
+//     the return code + route presence (never connection identity), so the
 //     divergence is invisible to the parity suite (see AmsRouter class doc).
+//
+//   * LAZY DIAL AT connect() (one-dial-point adaptation). The C++ AddRoute opens
+//     its AmsConnection eagerly (synchronous C++ socket code); this async Dart
+//     port stores only endpoint metadata in addRoute and dials in
+//     router.connect(). The C++ parity assertion
+//     `GetConnection(netId) != nullptr` after AddRoute therefore maps onto
+//     `hasRoute(netId) == true` (route presence), and getConnection()/resolve()
+//     serve only LIVE connect()-dialed connections — never a dead, un-dialed
+//     object. AddRoute return codes and DelRoute effects are reproduced 1:1.
 //
 //   * NO LIVE SOCKETS. A FakeTransport-returning factory is injected, so the
 //     entire route/port/localAddr algebra runs as a pure unit test. The C++
@@ -67,7 +76,8 @@ void main() {
       final ports = <int>{};
       for (var i = 0; i < AmsRouter.numPortsMax; i++) {
         final port = router.openPort();
-        expect(port, isNot(0), reason: 'slot $i should allocate a non-zero port');
+        expect(port, isNot(0),
+            reason: 'slot $i should allocate a non-zero port');
         expect(port, greaterThanOrEqualTo(AmsRouter.portBase));
         expect(port, lessThan(AmsRouter.portBase + AmsRouter.numPortsMax));
         ports.add(port);
@@ -95,7 +105,8 @@ void main() {
     test('closePort of an out-of-range port -> 0x0748', () {
       final router = fakeRouter();
       expect(router.closePort(AmsRouter.portBase - 1), 0x0748);
-      expect(router.closePort(AmsRouter.portBase + AmsRouter.numPortsMax), 0x0748);
+      expect(
+          router.closePort(AmsRouter.portBase + AmsRouter.numPortsMax), 0x0748);
       // A never-opened but in-range port is likewise "not open".
       expect(router.closePort(AmsRouter.portBase), 0x0748);
     });
@@ -105,35 +116,41 @@ void main() {
     test('add / different-host / re-add / used-host / idempotent', () {
       final router = fakeRouter();
 
-      // 1. New NetId + new host -> 0, connection present.
+      // 1. New NetId + new host -> 0, route present (C++ GetConnection != null
+      //    maps to hasRoute — see the lazy-dial adaptation note above).
       expect(router.addRoute(netIdA, hostA), 0);
-      expect(router.getConnection(netIdA), isNotNull);
+      expect(router.hasRoute(netIdA), isTrue);
 
       // 2. Same NetId + DIFFERENT host -> PORTALREADYINUSE (0x0506); old intact.
       expect(router.addRoute(netIdA, hostB), 0x0506);
-      expect(router.getConnection(netIdA), isNotNull);
+      expect(router.hasRoute(netIdA), isTrue);
 
       // 3. removeRoute, then re-add same NetId to that different host -> 0.
       router.removeRoute(netIdA);
-      expect(router.getConnection(netIdA), isNull);
+      expect(router.hasRoute(netIdA), isFalse);
       expect(router.addRoute(netIdA, hostB), 0);
-      expect(router.getConnection(netIdA), isNotNull);
+      expect(router.hasRoute(netIdA), isTrue);
 
-      // 4. New NetId + an already-used host -> 0 (own connection per NetId).
+      // 4. New NetId + an already-used host -> 0 (own route entry per NetId).
       expect(router.addRoute(netIdB, hostB), 0);
-      expect(router.getConnection(netIdB), isNotNull);
+      expect(router.hasRoute(netIdB), isTrue);
 
       // 5. Same NetId + same host again -> idempotent 0.
       expect(router.addRoute(netIdB, hostB), 0);
-      expect(router.getConnection(netIdB), isNotNull);
+      expect(router.hasRoute(netIdB), isTrue);
+
+      // No connection has been dialed at any point: addRoute is metadata-only.
+      expect(router.getConnection(netIdA), isNull);
+      expect(router.getConnection(netIdB), isNull);
     });
   });
 
   group('testAmsRouterDelRoute', () {
-    test('add then removeRoute -> connection gone', () {
+    test('add then removeRoute -> route gone', () {
       final router = fakeRouter();
       expect(router.addRoute(netIdA, hostA), 0);
       router.removeRoute(netIdA);
+      expect(router.hasRoute(netIdA), isFalse);
       expect(router.getConnection(netIdA), isNull);
     });
 
@@ -143,13 +160,32 @@ void main() {
       expect(router.addRoute(netIdB, hostB), 0);
 
       router.removeRoute(netIdA);
+      expect(router.hasRoute(netIdA), isFalse);
+      expect(router.hasRoute(netIdB), isTrue);
+    });
+
+    test('removeRoute closes the live connect()-dialed connection', () async {
+      final router = fakeRouter()
+        ..setLocalAddress(AmsNetId(const [1, 2, 3, 4, 5, 6]));
+      expect(router.addRoute(netIdA, hostA), 0);
+      final client = await router.connect(
+        netIdA,
+        AmsPort.plcTc3,
+        mode: const DirectTarget(hostA),
+      );
+      expect(router.getConnection(netIdA), same(client.connection));
+
+      router.removeRoute(netIdA);
       expect(router.getConnection(netIdA), isNull);
-      expect(router.getConnection(netIdB), isNotNull);
+      // C++ DelRoute parity: the route's connection does not survive it.
+      await client.connection.done;
+      expect(client.connection.isConnected, isFalse);
     });
   });
 
   group('testAmsRouterSetLocalAddress', () {
-    test('default empty; setLocalAddress overwrites; getLocalAddress reflects', () {
+    test('default empty; setLocalAddress overwrites; getLocalAddress reflects',
+        () {
       final router = fakeRouter();
 
       // A freshly opened port and the empty default source address.
@@ -179,30 +215,62 @@ void main() {
       );
     });
 
-    test('resolve of a routed NetId returns its connection (no throw)', () {
+    test('resolve of a routed-but-unconnected NetId throws (not 0x0007)', () {
+      // Lazy-dial adaptation: the route exists, but connect() has not dialed a
+      // connection yet — resolve refuses rather than returning a dead object.
       final router = fakeRouter();
       expect(router.addRoute(netIdA, hostA), 0);
+      expect(
+        () => router.resolve(netIdA),
+        throwsA(isA<AdsConnectionException>()),
+      );
+    });
+
+    test('after connect(), resolve returns the live connection', () async {
+      final router = fakeRouter()
+        ..setLocalAddress(AmsNetId(const [1, 2, 3, 4, 5, 6]));
+      expect(router.addRoute(netIdA, hostA), 0);
+      final client = await router.connect(
+        netIdA,
+        AmsPort.plcTc3,
+        mode: const DirectTarget(hostA),
+      );
       expect(router.resolve(netIdA), same(router.getConnection(netIdA)));
+      expect(router.resolve(netIdA), same(client.connection));
+      await router.close();
     });
   });
 
   group('auto_derive', () {
-    test('first connection derives source NetId as <ip>.1.1 when unset', () {
+    test('first successful connect() derives source NetId as <ip>.1.1',
+        () async {
       final router = fakeRouter(localIp: '192.168.0.100');
 
-      // No explicit setLocalAddress -> derived from the transport local IPv4.
+      // No explicit setLocalAddress -> derived post-dial from the transport's
+      // local IPv4 (a real SocketTransport has no local address before the
+      // dial, so addRoute cannot derive — connect() is the derive point).
       expect(router.getLocalAddress(), AmsRouter.emptyLocalAddress);
-      expect(router.addRoute(netIdA, hostA), 0);
+      final client = await router.connect(
+        netIdA,
+        AmsPort.plcTc3,
+        mode: const LocalRouterTarget(host: hostA),
+      );
       expect(router.getLocalAddress(), AmsNetId.parse('192.168.0.100.1.1'));
+      await client.connection.close();
     });
 
-    test('an explicit setLocalAddress suppresses the auto-derive', () {
+    test('an explicit setLocalAddress suppresses the auto-derive', () async {
       final router = fakeRouter(localIp: '192.168.0.100');
       final explicit = AmsNetId(const [7, 7, 7, 7, 7, 7]);
 
       router.setLocalAddress(explicit);
-      expect(router.addRoute(netIdA, hostA), 0);
+      final client = await router.connect(
+        netIdA,
+        AmsPort.plcTc3,
+        mode: const LocalRouterTarget(host: hostA),
+      );
       expect(router.getLocalAddress(), explicit);
+      await client.connection.close();
     });
   });
 }

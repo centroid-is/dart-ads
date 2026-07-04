@@ -5,26 +5,35 @@
 /// It owns three things:
 ///   * a fixed 128-slot local-AMS-port allocator based at 30000
 ///     ([openPort] / [closePort]);
-///   * the route table mapping a target [AmsNetId] → an owned [AmsConnection]
-///     ([addRoute] / [removeRoute] / [getConnection] / [resolve]);
+///   * the route table mapping a target [AmsNetId] → its endpoint host/port
+///     ([addRoute] / [removeRoute] / [hasRoute]), plus the LIVE
+///     [AmsConnection]s that [connect] — the single dial point — has opened
+///     against those routes ([getConnection] / [resolve]);
 ///   * the mutable source/local [AmsNetId] ([setLocalAddress] /
 ///     [getLocalAddress]) with lazy `<ip>.1.1` auto-derivation on the first
-///     connection.
+///     successful [connect].
 ///
-/// The connection is built through an injected [TransportFactory] so the whole
+/// Connections are built through an injected [TransportFactory] so the whole
 /// route/port/localAddr algebra is exercised by a `FakeTransport` with no live
-/// sockets. Plan 04 adds [AmsRouter.connect]: it turns a target NetId + a
-/// [TransportTarget] mode into a ready [AdsClient] (source→target addressed),
-/// and — in [DirectTarget] mode ONLY — enriches a request timeout into an
-/// actionable ADS `0x0745`/1861 error naming the source NetId (ERR-02) instead
-/// of a bare timeout.
+/// sockets. [AmsRouter.connect] turns a target NetId + a [TransportTarget]
+/// mode into a ready [AdsClient] (source→target addressed), and — in
+/// [DirectTarget] mode ONLY — enriches a request timeout into an actionable
+/// ADS `0x0745`/1861 error naming the source NetId (ERR-02) instead of a bare
+/// timeout.
 ///
-/// Divergence from C++ (documented for the parity tests): the C++ router shares
-/// one refcounted `AmsConnection` across multiple NetIds pointing at the same
-/// host; this Dart port keeps ONE connection per target NetId
-/// (`Map<AmsNetId, AmsConnection>`). Every parity assertion (return code +
-/// non-null connection) holds either way — the tests never assert two NetIds
-/// share the same connection object.
+/// Divergences from C++ (documented for the parity tests):
+///   * the C++ router shares one refcounted `AmsConnection` across multiple
+///     NetIds pointing at the same host; this Dart port keeps ONE live
+///     connection per target NetId (`Map<AmsNetId, AmsConnection>`). Every
+///     parity assertion (return code + route presence) holds either way — the
+///     tests never assert two NetIds share the same connection object.
+///   * the C++ `AddRoute` dials its connection eagerly (it is synchronous C++
+///     socket code); this async Dart port stores only the endpoint metadata in
+///     [addRoute] and dials lazily in [connect]. An `addRoute`d-but-never-
+///     `connect`ed NetId therefore has a route ([hasRoute] is true) but no
+///     live connection yet ([getConnection] is null). This keeps `addRoute`
+///     synchronous (C++ signature parity) without ever exposing an un-dialed,
+///     permanently dead `AmsConnection`.
 library;
 
 import 'dart:async';
@@ -35,7 +44,6 @@ import '../connection/ams_connection.dart';
 import '../connection/exceptions.dart';
 import '../protocol/ads_error.dart';
 import '../protocol/ams_net_id.dart';
-import '../protocol/constants.dart';
 import '../transport/socket_transport.dart';
 import '../transport/transport.dart';
 import 'routing_exception.dart';
@@ -46,15 +54,14 @@ import 'transport_target.dart';
 /// `FakeTransport`-returning factory so route logic runs without sockets.
 typedef TransportFactory = AdsTransport Function(String host, int port);
 
-/// A single route-table entry: the owned [connection] plus the [transport] it
-/// wraps and the [host]/[port] it targets (recorded so the "same NetId,
-/// different host ⇒ PORTALREADYINUSE" and "same host ⇒ idempotent" rules are
-/// decided BEFORE any second connection is built).
+/// A single route-table entry: the endpoint [host]/[port] a target NetId is
+/// reached at. Pure metadata — no connection object is built until
+/// [AmsRouter.connect] dials one (the "same NetId, different host ⇒
+/// PORTALREADYINUSE" and "same host ⇒ idempotent" rules are decided on this
+/// record alone, before any I/O).
 class _Route {
-  _Route(this.connection, this.transport, this.host, this.port);
+  const _Route(this.host, this.port);
 
-  final AmsConnection connection;
-  final AdsTransport transport;
   final String host;
   final int port;
 }
@@ -102,8 +109,14 @@ class AmsRouter {
   /// free; otherwise it holds the assigned port value `portBase + i`.
   final List<int> _ports = List<int>.filled(numPortsMax, 0);
 
-  /// The route table: target NetId → its owned route entry.
+  /// The route table: target NetId → its endpoint metadata (no connection —
+  /// [connect] is the single dial point).
   final Map<AmsNetId, _Route> _routes = <AmsNetId, _Route>{};
+
+  /// Live connections dialed by [connect], keyed by target NetId (one per
+  /// NetId; a second [connect] to the same NetId replaces the entry while the
+  /// older connection stays owned until it closes).
+  final Map<AmsNetId, AmsConnection> _connections = <AmsNetId, AmsConnection>{};
 
   /// The mutable source/local AMS Net ID; all-zero until [setLocalAddress] or
   /// the first-connection `<ip>.1.1` auto-derive sets it.
@@ -137,20 +150,23 @@ class AmsRouter {
     return 0;
   }
 
-  /// Maps target [netId] to a connection reached via [host]:[port].
+  /// Maps target [netId] to the endpoint [host]:[port] (metadata only — the
+  /// connection is dialed later, by [connect]).
   ///
-  /// Decision tree (C++ `AddRoute` parity, one-per-NetId variant):
-  ///   * new [netId] → build a connection via the factory, map it, return `0`
-  ///     (and, if no local address is set yet, auto-derive `<ip>.1.1` from the
-  ///     transport's `localAddress`);
+  /// Decision tree (C++ `AddRoute` parity, lazy-dial variant):
+  ///   * new [netId] → record the endpoint, return `0`;
   ///   * existing [netId] to a DIFFERENT [host]/[port] → return
   ///     `ROUTERERR_PORTALREADYINUSE` (`0x0506`), leaving the old route intact
   ///     ([removeRoute] it first);
-  ///   * existing [netId] to the SAME [host]/[port] → idempotent `0`, no second
-  ///     connection built;
-  ///   * a new [netId] whose [host] is already used by another NetId → `0` with
-  ///     its own connection (this port does not share connections across
+  ///   * existing [netId] to the SAME [host]/[port] → idempotent `0`;
+  ///   * a new [netId] whose [host] is already used by another NetId → `0`
+  ///     with its own entry (this port does not share connections across
   ///     NetIds — see the class divergence note).
+  ///
+  /// Unlike the C++ `AddRoute`, no connection is opened here and the source
+  /// NetId is NOT derived here: a real `SocketTransport` has no local address
+  /// until it dials, so the `<ip>.1.1` auto-derive runs after the first
+  /// successful [connect] instead.
   int addRoute(AmsNetId netId, String host, {int port = 48898}) {
     final existing = _routes[netId];
     if (existing != null) {
@@ -159,52 +175,65 @@ class AmsRouter {
       }
       return _routerErrPortAlreadyInUse; // Same NetId, different endpoint.
     }
-
-    final transport = _transportFactory(host, port);
-
-    // First-connection source-NetId derivation: only when no explicit local
-    // address has been set AND the transport exposes a local IPv4.
-    final localIp = transport.localAddress;
-    if (_localAddr == _emptyNetId && localIp != null) {
-      _localAddr = AmsNetId.fromIpv4(localIp);
-    }
-
-    final connection = AmsConnection(
-      transport,
-      source: AmsAddr(_localAddr, 0),
-      target: AmsAddr(netId, AmsPort.plcTc3),
-      defaultTimeout: _defaultTimeout,
-    );
-    _routes[netId] = _Route(connection, transport, host, port);
+    _routes[netId] = _Route(host, port);
     return 0;
   }
 
-  /// Removes the route for [netId], closing its owned connection.
+  /// Removes the route for [netId], closing its live [connect]-created
+  /// connection if one exists (C++ `DelRoute` parity: the route's connection
+  /// does not survive the route).
   ///
-  /// The mapping is dropped synchronously (so [getConnection]/[resolve] see it
-  /// gone immediately); the connection teardown is fire-and-forget. Routes for
-  /// other NetIds are unaffected. A no-op if [netId] is not routed.
+  /// The mappings are dropped synchronously (so [hasRoute] /
+  /// [getConnection] / [resolve] see them gone immediately); the connection
+  /// teardown is fire-and-forget. Routes for other NetIds are unaffected. A
+  /// no-op if [netId] is not routed.
   void removeRoute(AmsNetId netId) {
-    final route = _routes.remove(netId);
-    if (route != null) {
-      unawaited(route.connection.close());
+    _routes.remove(netId);
+    final live = _connections.remove(netId);
+    if (live != null) {
+      unawaited(live.close());
     }
   }
 
-  /// The owned [AmsConnection] for target [netId], or `null` if not routed
-  /// (C++ `GetConnection` parity — a plain map lookup, never throws).
-  AmsConnection? getConnection(AmsNetId netId) => _routes[netId]?.connection;
+  /// Whether target [netId] has a route-table entry (the Dart adaptation of
+  /// the C++ parity assertion `GetConnection(netId) != nullptr` after
+  /// `AddRoute` — this port dials lazily in [connect], so route presence and
+  /// live-connection presence are distinct).
+  bool hasRoute(AmsNetId netId) => _routes.containsKey(netId);
 
-  /// Resolves target [netId] to its [AmsConnection], throwing
-  /// [AdsRoutingException] (`0x0007` `GLOBALERR_MISSING_ROUTE`) naming [netId]
-  /// when it is not in the route table — BEFORE any socket I/O (C++
-  /// `AmsRouter::AdsRequest` parity).
+  /// The LIVE [AmsConnection] the most recent successful [connect] opened for
+  /// target [netId], or `null` when none exists (not routed, never connected,
+  /// or already closed). Never returns an un-dialed connection.
+  AmsConnection? getConnection(AmsNetId netId) => _connections[netId];
+
+  /// Resolves target [netId] to its live [AmsConnection].
+  ///
+  /// Throws [AdsRoutingException] (`0x0007` `GLOBALERR_MISSING_ROUTE`) naming
+  /// [netId] when it is not in the route table — BEFORE any socket I/O (C++
+  /// `AmsRouter::AdsRequest` parity) — and [AdsConnectionException] when the
+  /// route exists but no live connection has been dialed yet (call [connect]
+  /// first; the C++ router has no such state because its `AddRoute` dials
+  /// eagerly).
   AmsConnection resolve(AmsNetId netId) {
+    _requireRoute(netId);
+    final live = _connections[netId];
+    if (live == null) {
+      throw AdsConnectionException(
+        'no live connection for NetId ${netId.dotted}: '
+        'connect() dials one (addRoute only records the endpoint)',
+      );
+    }
+    return live;
+  }
+
+  /// The route for [netId], or an [AdsRoutingException] (`0x0007`
+  /// `GLOBALERR_MISSING_ROUTE`) naming [netId] — the shared pre-I/O gate.
+  _Route _requireRoute(AmsNetId netId) {
     final route = _routes[netId];
     if (route == null) {
       throw AdsRoutingException.missingRoute(netId);
     }
-    return route.connection;
+    return route;
   }
 
   /// Overwrites the source/local AMS Net ID (C++ `SetLocalAddress` parity).
@@ -264,7 +293,7 @@ class AmsRouter {
     // missing-route up front, before any I/O. Local-router mode delegates
     // routing to the endpoint itself, so no route-table entry is required.
     if (direct) {
-      resolve(targetNetId); // throws AdsRoutingException.missingRoute (0x0007)
+      _requireRoute(targetNetId); // throws missingRoute (0x0007)
     }
 
     // Allocate the local AMS source port. The 0 sentinel means all 128 slots
@@ -314,15 +343,20 @@ class AmsRouter {
       _localAddr = AmsNetId.fromIpv4(localIp);
     }
 
+    // Cache the live connection so getConnection/resolve serve THIS dialed
+    // connection (one live entry per NetId; a newer connect replaces it).
+    _connections[targetNetId] = connection;
+
     return AdsClient(connection, target: target, source: source);
   }
 
-  /// Closes every owned connection and clears the route table (fan-out reuses
-  /// the Phase-2 [AmsConnection] disconnect semantics).
+  /// Closes every live [connect]-created connection and clears the route
+  /// table (fan-out reuses the Phase-2 [AmsConnection] disconnect semantics).
   Future<void> close() async {
-    final routes = List<_Route>.of(_routes.values);
     _routes.clear();
-    await Future.wait(routes.map((r) => r.connection.close()));
+    final live = List<AmsConnection>.of(_connections.values);
+    _connections.clear();
+    await Future.wait(live.map((c) => c.close()));
   }
 }
 

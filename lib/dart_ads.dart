@@ -105,10 +105,11 @@ export 'src/client/ads_client.dart' show AdsClient;
 export 'src/client/ads_types.dart' show AdsStateInfo, DeviceInfo;
 
 /// The [AmsRouter] registry: the local-AMS-port allocator (base 30000, 128
-/// slots), the target-NetId → [AmsConnection] route table, the mutable source
-/// address with `<ip>.1.1` auto-derive, and `connect()` — which turns a target
-/// NetId + a [TransportTarget] mode into a ready [AdsClient] (ROUTE-01) and
-/// enriches a direct-mode timeout into an actionable `0x0745` error (ERR-02).
+/// slots), the target-NetId → endpoint route table (connections are dialed
+/// lazily by `connect()`), the mutable source address with `<ip>.1.1`
+/// auto-derive, and `connect()` — which turns a target NetId + a
+/// [TransportTarget] mode into a ready [AdsClient] (ROUTE-01) and enriches a
+/// direct-mode timeout into an actionable `0x0745` error (ERR-02).
 /// The `TransportFactory` typedef is its injectable connection seam.
 export 'src/router/ams_router.dart' show AmsRouter, TransportFactory;
 
