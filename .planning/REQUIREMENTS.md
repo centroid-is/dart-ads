@@ -33,11 +33,11 @@ Requirements for initial release (full AdsLib parity). Each maps to roadmap phas
 ### Error Handling
 
 - [x] **ERR-01**: Library maps ADS error codes to typed Dart exceptions distinct from transport errors
-- [ ] **ERR-02**: Library surfaces error 1861/0x745 (missing route) with an actionable message naming the source AmsNetId and suggesting a route/firewall check
+- [x] **ERR-02**: Library surfaces error 1861/0x745 (missing route) with an actionable message naming the source AmsNetId and suggesting a route/firewall check
 
 ### Routing & Transport Modes
 
-- [ ] **ROUTE-01**: User can select transport at runtime — direct-to-peer or via a local TwinCAT router (127.0.0.1:48898)
+- [x] **ROUTE-01**: User can select transport at runtime — direct-to-peer or via a local TwinCAT router (127.0.0.1:48898)
 - [ ] **ROUTE-02**: Embedded AmsRouter maps AmsNetId → connection and allocates local AMS ports
 - [ ] **ROUTE-03**: User can configure the source AmsNetId and a local route table for direct mode
 
@@ -147,10 +147,10 @@ Which phases cover which requirements. Populated during roadmap creation.
 | CMD-05 | Phase 3 | Complete |
 | CMD-06 | Phase 3 | Complete |
 | ERR-01 | Phase 3 | Complete |
-| ROUTE-01 | Phase 4 | Pending |
+| ROUTE-01 | Phase 4 | Complete |
 | ROUTE-02 | Phase 4 | Pending |
 | ROUTE-03 | Phase 4 | Pending |
-| ERR-02 | Phase 4 | Pending |
+| ERR-02 | Phase 4 | Complete |
 | NOTIF-01 | Phase 5 | Pending |
 | NOTIF-02 | Phase 5 | Pending |
 | NOTIF-03 | Phase 5 | Pending |

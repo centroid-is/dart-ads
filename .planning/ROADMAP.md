@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Protocol Framing, Codecs & C++ Golden-Frame Harness** - Byte-accurate AMS codec + CMake mock/golden harness proving encode/decode parity (completed 2026-07-03)
 - [x] **Phase 2: TCP Transport, Connection Lifecycle & Invoke-ID Correlation** - Live socket, request/response correlation, and disconnect fan-out (completed 2026-07-03)
 - [x] **Phase 3: Core ADS Commands & Error Mapping** - Read/Write/ReadWrite/ReadState/WriteControl/ReadDeviceInfo with typed exceptions (completed 2026-07-04)
-- [ ] **Phase 4: AmsRouter & Direct / Local-Router Transport Modes** - NetId routing, runtime transport selection, and actionable 1861 route errors
+- [x] **Phase 4: AmsRouter & Direct / Local-Router Transport Modes** - NetId routing, runtime transport selection, and actionable 1861 route errors (completed 2026-07-04)
 - [ ] **Phase 5: Device Notifications as Streams** - Subscribe/cancel as Dart Streams with nested stamp/sample demux and handle lifecycle
 - [ ] **Phase 6: Sum (Batched) Commands** - Batched read/write/readwrite with per-item partial-failure results
 - [ ] **Phase 7: Symbol Access, Browse & Typed Values** - Handle-by-name, symbol table browse, and scalar type conversion
@@ -92,7 +92,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   - [x] 04-01-PLAN.md — Transport localAddress seam (SocketTransport + FakeTransport) for <ip>.1.1 auto-derive (wave 1)
   - [x] 04-02-PLAN.md — AmsNetId/AmsAddr Comparable ordering + fromIpv4 + testAmsAddrCompare parity (wave 1)
   - [x] 04-03-PLAN.md — AmsRouter registry: port allocator + route table + localAddr + 4 router parity ports (wave 2)
-  - [ ] 04-04-PLAN.md — TransportTarget modes + connect() + ERR-02 1861 + dual-mode/ERR-02 integration (wave 3)
+  - [x] 04-04-PLAN.md — TransportTarget modes + connect() + ERR-02 1861 + dual-mode/ERR-02 integration (wave 3)
 **Research**: NEEDS RESEARCH — the AmsRouter AddRoute handshake over UDP :48899 is the least-documented protocol area; confirm exact packet format, credential exchange, and whether programmatic route registration belongs in v1 or v1.x before committing scope.
 **UI hint**: no
 
@@ -167,7 +167,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 1. Protocol Framing, Codecs & Golden-Frame Harness | 7/7 | Complete   | 2026-07-03 |
 | 2. TCP Transport, Lifecycle & Correlation | 4/4 | Complete   | 2026-07-03 |
 | 3. Core ADS Commands & Error Mapping | 6/6 | Complete   | 2026-07-04 |
-| 4. AmsRouter & Transport Modes | 3/4 | In Progress|  |
+| 4. AmsRouter & Transport Modes | 4/4 | Complete   | 2026-07-04 |
 | 5. Device Notifications as Streams | 0/TBD | Not started | - |
 | 6. Sum (Batched) Commands | 0/TBD | Not started | - |
 | 7. Symbol Access, Browse & Typed Values | 0/TBD | Not started | - |
