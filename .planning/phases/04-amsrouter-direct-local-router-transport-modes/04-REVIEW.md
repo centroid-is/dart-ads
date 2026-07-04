@@ -13,7 +13,12 @@ findings:
   warning: 5
   info: 6
   total: 14
-status: issues_found
+status: fixes_applied
+fixed_at: 2026-07-04T13:00:00Z
+fix_iteration: 1
+fix_scope: critical_warning
+fixed: 8
+fix_report: 04-REVIEW-FIX.md
 ---
 
 # Phase 4: Code Review Report
@@ -21,7 +26,10 @@ status: issues_found
 **Reviewed:** 2026-07-04T00:00:00Z
 **Depth:** standard
 **Files Reviewed:** 4 (plus context: transports, connection, client, tests, README)
-**Status:** issues_found
+**Status:** fixes_applied — all 3 Critical + 5 Warning findings resolved
+(scope: critical_warning; Info findings IN-01..IN-06 intentionally not fixed).
+See `04-REVIEW-FIX.md` for the per-finding fix report; per-finding
+**Resolution** notes below.
 
 ## Summary
 
@@ -74,6 +82,12 @@ unawaited(connection.done.whenComplete(() => closePort(sourcePort)));
 _ownedConnections.add(connection); // and close these in AmsRouter.close()
 ```
 
+**Resolution (2026-07-04, commit b4cff2e):** FIXED. Every `connect()`-created
+connection registers a `done` hook that frees its slot and prunes the
+owned/live registries; `AmsRouter.close()` now tears down every owned
+connection. `connect_lifecycle` unit group pins slot reuse after close, full
+release on `close()`, and the newer-entry-survives-older-teardown rule.
+
 ### CR-02: Port slot (and an open socket) leak on any throw outside the dial guard — realistic on IPv6/dual-stack hosts via `AmsNetId.fromIpv4`
 
 **File:** `lib/src/router/ams_router.dart:272-315` (leak sites: 277, 279, 312-314)
@@ -120,6 +134,13 @@ try {
 }
 ```
 
+**Resolution (2026-07-04, commit 0f98c32):** FIXED. `AmsAddr(targetNetId,
+amsPort)` validates before `openPort()`; one rollback guard spans factory →
+dial → derive (releases slot + closes connection on any throw); the derive
+runs only for strictly dotted-decimal IPv4 local addresses (`_isDottedIpv4`),
+so IPv6/dual-stack skips gracefully. Unit tests pin the IPv6 skip,
+pre-allocation `ArgumentError`, and throwing-factory rollback.
+
 ### CR-03: `addRoute` never dials its connection — `resolve()`/`getConnection()` return permanently unusable connections and the production auto-derive is dead code
 
 **File:** `lib/src/router/ams_router.dart:163-179, 194-208`
@@ -155,6 +176,16 @@ to return route metadata or remove them from the public surface, and delete
 the dead auto-derive in `addRoute` plus the `auto_derive` unit group that
 covers it. Option (b) matches how `connect()` actually uses the table today.
 
+**Resolution (2026-07-04, commit 9ed3130):** FIXED via option (b), refined:
+`_Route` stores host/port metadata only; `connect()` is the single dial point
+and caches its live connection per NetId; `getConnection`/`resolve` serve
+only live entries (`resolve` throws `AdsConnectionException` for
+routed-but-undialed, `0x0007` for unrouted); new `hasRoute()` carries the C++
+`GetConnection != nullptr` parity assertion; `removeRoute` closes the live
+connection (DelRoute parity); the `auto_derive` group now exercises the real
+post-dial derive through `connect()`. Lazy-dial adaptation documented in the
+class doc and parity-test header.
+
 ## Warnings
 
 ### WR-01: First direct connect without `setLocalAddress` stamps the all-zero source NetId — and ERR-02 then names `0.0.0.0.0.0` as the NetId to add a reverse route for
@@ -177,6 +208,12 @@ connects") or restructure to dial the transport first, derive, and only then
 construct the addressed connection. At minimum, special-case the ERR-02
 message when `sourceNetId` is all-zero.
 
+**Resolution (2026-07-04, commit ab0ff52):** FIXED (fail-fast option). Direct
+mode with an all-zero local address now throws a `StateError` naming
+`setLocalAddress` before any allocation or I/O, so a zero source NetId can
+never be stamped and ERR-02 can never name `0.0.0.0.0.0`. Local-router mode
+still allows the unset state and its first connect seeds the auto-derive.
+
 ### WR-02: `connect()` has no dial timeout — a direct connect to an unreachable host hangs for the OS TCP timeout (minutes)
 
 **File:** `lib/src/router/ams_router.dart:301` (via `socket_transport.dart:27`)
@@ -193,6 +230,13 @@ release the port slot on expiry), e.g.
 `await connection.connect(host, endpointPort).timeout(_defaultTimeout)` with
 the existing rollback catch, or plumb a timeout into
 `AdsTransport.connect`/`Socket.connect(host, port, timeout: …)`.
+
+**Resolution (2026-07-04, commit 62ef2bd):** FIXED. `AmsRouter` gains a
+`connectTimeout` constructor parameter (default 5 s); the dial is raced via
+`.timeout()`, expiry rolls back the slot + connection and throws a typed
+`AdsRoutingException.dialTimeout` (`0x0745`) with dial-specific remediation.
+`SocketTransport` destroys a socket whose dial completes after `close()`, so
+the abandoned dial cannot leak an fd. Hung-dial unit test pins the behavior.
 
 ### WR-03: Direct-mode route gate checks only NetId existence — `DirectTarget.deviceHost` is never reconciled with the routed host
 
@@ -211,6 +255,13 @@ route table exists to prevent.
 `DirectTarget`'s host optional/absent), or throw
 `ROUTERERR_PORTALREADYINUSE`-style conflict when
 `mode.deviceHost:port != route.host:port`.
+
+**Resolution (2026-07-04, commit 5396788):** FIXED (conflict-throw option).
+Direct mode now throws an `AdsRoutingException` with `0x0506`
+`ROUTERERR_PORTALREADYINUSE` naming BOTH endpoints when
+`DirectTarget.deviceHost:port` disagrees with the route-table entry, before
+any allocation or I/O. Documented on `DirectTarget` and `AmsRouter.connect`;
+unit-tested.
 
 ### WR-04: `LocalRouterTarget` omits the AMS/TCP port-registration handshake a real TwinCAT router requires — self-allocated 30000+ source ports are only valid against the mock
 
@@ -231,6 +282,13 @@ TwinCAT router") overstate what ships today and should say so.
 connect path (using the router-assigned NetId/port as the source address for
 that connection), or document `LocalRouterTarget` as mock-verified only with a
 tracked follow-up requirement.
+
+**Resolution (2026-07-04, commit 3a070b0):** FIXED (documentation option, per
+review fix scope — the `0x1000` handshake is beyond AdsLib parity: the C++
+AdsLib IS its own router and never dials one). `LocalRouterTarget` dartdoc
+gains a prominent "mock-verified only" limitation block, README gains a
+matching section, and `04-CONTEXT.md`'s deferred list tracks the v2
+follow-up.
 
 ### WR-05: Named threat guarantees T-4-01 and T-4-02 are asserted in docs but untested
 
@@ -258,6 +316,15 @@ and a direct-mode connection where `simulateDisconnect()` /a nonzero AMS
 `errorCode` reply surfaces as its original family. Also assert the return value
 of `router.addRoute(...)` in the integration test (`router_transport_modes_test.dart:88, 137`)
 instead of discarding it.
+
+**Resolution (2026-07-04, commit 7cd21ba):** FIXED. New `connect_error_policy`
+unit group covers: exhaustion → typed `0x0508` (T-4-01), refused-dial slot
+rollback, direct-mode request timeout → `0x0745` naming the real stamped
+source NetId, local-router timeout staying a bare `AdsTimeoutException`, and
+a mid-request disconnect crossing the direct-mode wrapper un-enriched
+(T-4-02). The integration suite now asserts both `addRoute(...)` return
+values. Together with the tests added alongside CR-01/CR-02/WR-01/WR-02/WR-03
+the unit suite grew from 113 to 129 tests (155 total with integration).
 
 ## Info
 
