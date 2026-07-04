@@ -249,14 +249,24 @@ class AmsConnection {
     return decoded.handle;
   }
 
-  /// Sends a DeleteDeviceNotification (cmd 0x07) [payload], then removes [handle]
-  /// from the demux map and closes its controller.
+  /// Sends a DeleteDeviceNotification (cmd 0x07) [payload], removes [handle]
+  /// from the demux map, closes its controller, and surfaces a server refusal.
   ///
-  /// The map mutation happens only after the request round-trips, so a dead
-  /// connection surfaces its [AdsConnectionException] to the caller (the client
-  /// swallows it — a stale handle is never Deleted against a reconnected
-  /// session, threat T-5-10; on disconnect `_failClose` has already invalidated
-  /// and cleared every handle locally).
+  /// LOCAL INVALIDATION IS UNCONDITIONAL (WR-01): the demux entry is removed
+  /// and its controller closed in a `finally`, so EVERY outcome — success,
+  /// server refusal, per-request timeout, dead connection — leaves no zombie
+  /// routing target behind. Local cleanup is safe regardless of the server's
+  /// verdict: a stale handle is never Deleted against a reconnected session
+  /// (threat T-5-10; on disconnect `_failClose` has already invalidated and
+  /// cleared every handle), and a refused Delete still means this client will
+  /// never route samples for the handle again.
+  ///
+  /// A non-zero AMS-header `errorCode` or a non-zero decoded ADS `result`
+  /// (e.g. `0x752 ADSERR_CLIENT_REMOVEHASH`) throws [AdsException] — a server
+  /// that refuses the Delete keeps its handle alive, and a direct caller must
+  /// see that. `AdsClient._deleteQuietly` swallows this BY POLICY on the
+  /// cancel path (cancel never throws, threat T-5-12); the policy is sound
+  /// only because this layer tells the truth.
   Future<void> deleteNotification(
     int handle,
     Uint8List payload, {
@@ -274,19 +284,30 @@ class AmsConnection {
     // is still `identical` to the captured one makes the stale continuation a
     // no-op for the recycled handle.
     final victim = _demuxControllers[handle];
-    await request(
-      AdsCommandId.deleteDeviceNotification,
-      payload,
-      timeout: timeout,
-    );
-    if (identical(_demuxControllers[handle], victim)) {
-      _demuxControllers.remove(handle);
+    ({int errorCode, Uint8List payload}) resp;
+    try {
+      resp = await request(
+        AdsCommandId.deleteDeviceNotification,
+        payload,
+        timeout: timeout,
+      );
+    } finally {
+      if (identical(_demuxControllers[handle], victim)) {
+        _demuxControllers.remove(handle);
+      }
+      // Fire-and-forget the close: a single-subscription controller with no
+      // live listener only completes its close() future once listened, so
+      // awaiting it here could hang. The stream is done regardless; the caller
+      // does not need to observe teardown completion.
+      unawaited(victim?.close() ?? Future<void>.value());
     }
-    // Fire-and-forget the close: a single-subscription controller with no live
-    // listener only completes its close() future once listened, so awaiting it
-    // here could hang. The stream is done regardless; the caller does not need
-    // to observe teardown completion.
-    unawaited(victim?.close() ?? Future<void>.value());
+    if (resp.errorCode != 0) {
+      throw AdsException.fromCode(resp.errorCode);
+    }
+    final result = decodeDeleteNotificationResponse(resp.payload);
+    if (result != 0) {
+      throw AdsException.fromCode(result);
+    }
   }
 
   /// Allocates the next monotonic u32 invoke-ID, wrapping `0xFFFFFFFF → 1` and

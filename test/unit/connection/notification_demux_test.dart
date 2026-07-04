@@ -376,6 +376,156 @@ void main() {
       expect(conn.droppedNotifications, 0);
     });
 
+    test(
+        'a server-refused Delete (non-zero result) throws AdsException but '
+        'still removes and closes the local entry (WR-01)', () async {
+      final fake = FakeTransport();
+      final conn = newConnection(fake);
+      await conn.connect('fake', 0);
+
+      const handle = 0x0060;
+      final ctrl = StreamController<AdsNotification>();
+      final received = <AdsNotification>[];
+      ctrl.stream.listen(received.add);
+      final addFut = conn.addNotification(anyAddPayload(), ctrl);
+      final addId = outboundInvokeId(fake.written.single);
+      fake.feed(buildFrame(
+        invokeId: addId,
+        commandId: AdsCommandId.addDeviceNotification,
+        payload: addResp(result: 0, handle: handle),
+      ));
+      await addFut;
+
+      final delFut = conn.deleteNotification(
+        handle,
+        buildDeleteNotificationPayload(handle: handle),
+      );
+      final delId = outboundInvokeId(fake.written.last);
+      // ADSERR_CLIENT_REMOVEHASH: the server refused the Delete.
+      fake.feed(buildFrame(
+        invokeId: delId,
+        commandId: AdsCommandId.deleteDeviceNotification,
+        payload: deleteResp(result: 0x752),
+      ));
+
+      await expectLater(
+        delFut,
+        throwsA(isA<AdsException>().having((e) => e.code, 'code', 0x752)),
+        reason: 'a refused Delete must be distinguishable from success',
+      );
+
+      // The local entry is invalidated regardless of the server verdict.
+      expect(ctrl.isClosed, isTrue);
+      fake.feed(notifFrame(notifStream([
+        (
+          timestamp: ts,
+          samples: [(handle: handle, data: Uint8List(1))],
+        ),
+      ])));
+      await pump();
+      expect(received, isEmpty,
+          reason: 'the demux entry was removed despite the refusal');
+    });
+
+    test(
+        'a non-zero AMS errorCode on the Delete response throws AdsException '
+        'after local cleanup (WR-01)', () async {
+      final fake = FakeTransport();
+      final conn = newConnection(fake);
+      await conn.connect('fake', 0);
+
+      const handle = 0x0061;
+      final ctrl = StreamController<AdsNotification>();
+      final addFut = conn.addNotification(anyAddPayload(), ctrl);
+      final addId = outboundInvokeId(fake.written.single);
+      fake.feed(buildFrame(
+        invokeId: addId,
+        commandId: AdsCommandId.addDeviceNotification,
+        payload: addResp(result: 0, handle: handle),
+      ));
+      await addFut;
+
+      final delFut = conn.deleteNotification(
+        handle,
+        buildDeleteNotificationPayload(handle: handle),
+      );
+      final delId = outboundInvokeId(fake.written.last);
+      // AMS-header errorCode non-zero: craft the header directly (buildFrame
+      // hardcodes errorCode 0), payload result 0.
+      final ams = AmsHeader(
+        targetNetId: source.netId,
+        targetPort: source.port,
+        sourceNetId: target.netId,
+        sourcePort: target.port,
+        commandId: AdsCommandId.deleteDeviceNotification,
+        stateFlags: AmsStateFlags.response,
+        dataLength: 4,
+        errorCode: 0x0007,
+        invokeId: delId,
+      ).encode();
+      final body = deleteResp();
+      final tcp = AmsTcpHeader(length: AmsHeader.byteLength + 4).encode();
+      final frame =
+          Uint8List(AmsTcpHeader.byteLength + AmsHeader.byteLength + 4)
+            ..setRange(0, AmsTcpHeader.byteLength, tcp)
+            ..setRange(AmsTcpHeader.byteLength,
+                AmsTcpHeader.byteLength + AmsHeader.byteLength, ams)
+            ..setRange(AmsTcpHeader.byteLength + AmsHeader.byteLength,
+                AmsTcpHeader.byteLength + AmsHeader.byteLength + 4, body);
+      fake.feed(frame);
+
+      await expectLater(
+        delFut,
+        throwsA(isA<AdsException>().having((e) => e.code, 'code', 0x0007)),
+      );
+      expect(ctrl.isClosed, isTrue,
+          reason: 'local cleanup precedes the AMS-level throw');
+    });
+
+    test(
+        'a Delete timeout still removes the demux entry and closes the '
+        'controller — no zombie routing target (WR-01)', () async {
+      final fake = FakeTransport();
+      final conn = newConnection(fake);
+      await conn.connect('fake', 0);
+
+      const handle = 0x0062;
+      final ctrl = StreamController<AdsNotification>();
+      final received = <AdsNotification>[];
+      ctrl.stream.listen(received.add);
+      final addFut = conn.addNotification(anyAddPayload(), ctrl);
+      final addId = outboundInvokeId(fake.written.single);
+      fake.feed(buildFrame(
+        invokeId: addId,
+        commandId: AdsCommandId.addDeviceNotification,
+        payload: addResp(result: 0, handle: handle),
+      ));
+      await addFut;
+
+      // No Delete response is ever fed: the per-request timeout fires.
+      final delFut = conn.deleteNotification(
+        handle,
+        buildDeleteNotificationPayload(handle: handle),
+        timeout: const Duration(milliseconds: 20),
+      );
+      await expectLater(delFut, throwsA(isA<AdsTimeoutException>()));
+
+      // The entry was invalidated on the failure path too: a later 0x08 for
+      // the handle routes nowhere, and the controller is closed.
+      expect(ctrl.isClosed, isTrue);
+      fake.feed(notifFrame(notifStream([
+        (
+          timestamp: ts,
+          samples: [(handle: handle, data: Uint8List(1))],
+        ),
+      ])));
+      await pump();
+      expect(received, isEmpty,
+          reason: 'the timed-out Delete left no zombie demux entry');
+      expect(conn.isConnected, isTrue,
+          reason: 'a per-request timeout does not kill the connection');
+    });
+
     test('does not throw spuriously against a live connection', () async {
       final fake = FakeTransport();
       final conn = newConnection(fake);
