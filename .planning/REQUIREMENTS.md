@@ -83,8 +83,8 @@ Requirements for initial release (full AdsLib parity). Each maps to roadmap phas
 
 ### Packaging & Publishing
 
-- [ ] **PKG-01**: Package declares native-only platforms (linux/macos/windows/android/ios, no web) and excludes the vendored C++ harness via `.pubignore`; `dart pub publish --dry-run` passes
-- [ ] **PKG-02**: CLI is installable via `dart pub global activate` (pubspec `executables:` entry)
+- [x] **PKG-01**: Package declares native-only platforms (linux/macos/windows/android/ios, no web) and excludes the vendored C++ harness via `.pubignore`; `dart pub publish --dry-run` passes
+- [x] **PKG-02**: CLI is installable via `dart pub global activate` (pubspec `executables:` entry)
 
 ## v2 Requirements
 
@@ -171,8 +171,8 @@ Which phases cover which requirements. Populated during roadmap creation.
 | CLI-06 | Phase 8 | Complete |
 | CLI-07 | Phase 8 | Complete |
 | CLI-08 | Phase 8 | Complete |
-| PKG-01 | Phase 9 | Pending |
-| PKG-02 | Phase 9 | Pending |
+| PKG-01 | Phase 9 | Complete |
+| PKG-02 | Phase 9 | Complete |
 
 **Coverage:**
 - v1 requirements: 45 total
