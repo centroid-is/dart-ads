@@ -43,9 +43,9 @@ Requirements for initial release (full AdsLib parity). Each maps to roadmap phas
 
 ### Device Notifications (Streams)
 
-- [ ] **NOTIF-01**: User can subscribe to a symbol's device notifications as a Dart Stream (AddDeviceNotification on first listen)
+- [x] **NOTIF-01**: User can subscribe to a symbol's device notifications as a Dart Stream (AddDeviceNotification on first listen)
 - [x] **NOTIF-02**: Cancelling a subscription sends DeleteDeviceNotification (onCancel), and all handles are cleaned up on disconnect
-- [ ] **NOTIF-03**: Library parses nested notification frames (stamps × samples) and converts FILETIME timestamps to Dart DateTime
+- [x] **NOTIF-03**: Library parses nested notification frames (stamps × samples) and converts FILETIME timestamps to Dart DateTime
 - [x] **NOTIF-04**: User can choose on-change or cyclic transmission with max-delay / cycle-time attributes
 
 ### Sum (Batched) Commands
@@ -151,9 +151,9 @@ Which phases cover which requirements. Populated during roadmap creation.
 | ROUTE-02 | Phase 4 | Complete |
 | ROUTE-03 | Phase 4 | Complete |
 | ERR-02 | Phase 4 | Complete |
-| NOTIF-01 | Phase 5 | Pending |
+| NOTIF-01 | Phase 5 | Complete |
 | NOTIF-02 | Phase 5 | Complete |
-| NOTIF-03 | Phase 5 | Pending |
+| NOTIF-03 | Phase 5 | Complete |
 | NOTIF-04 | Phase 5 | Complete |
 | SUM-01 | Phase 6 | Pending |
 | SUM-02 | Phase 6 | Pending |

@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: ROADMAP.md and STATE.md written; REQUIREMENTS.md traceability populated.
-last_updated: "2026-07-04T14:31:34.550Z"
+status: ready_to_plan
+stopped_at: Phase 05 complete (6/6) — ready to discuss Phase 6
+last_updated: 2026-07-04T15:06:14.773Z
 last_activity: 2026-07-04
 progress:
   total_phases: 9
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-03)
 
 **Core value:** A Dart application can reliably connect to a Beckhoff PLC and read, write, and subscribe to variables over ADS — with wire behavior verified byte-for-byte against the reference C++ implementation.
-**Current focus:** Phase 05 — Device Notifications as Streams
+**Current focus:** Phase 6 — sum (batched) commands
 
 ## Current Position
 
-Phase: 05 (Device Notifications as Streams) — EXECUTING
-Plan: 2 of 6
-Status: Ready to execute
+Phase: 6
+Plan: Not started
+Status: Ready to plan
 Last activity: 2026-07-04
 
 Progress: [██████████] 100%
@@ -36,7 +36,7 @@ Progress: [██████████] 100%
 
 **Velocity:**
 
-- Total plans completed: 21
+- Total plans completed: 27
 - Average duration: —
 - Total execution time: 0 hours
 
@@ -48,6 +48,7 @@ Progress: [██████████] 100%
 | 02 | 4 | - | - |
 | 03 | 6 | - | - |
 | 04 | 4 | - | - |
+| 05 | 6 | - | - |
 
 **Recent Trend:**
 
