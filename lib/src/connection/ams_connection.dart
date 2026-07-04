@@ -32,7 +32,8 @@ import 'pending_request.dart';
 ///
 /// Construct with an [AdsTransport] plus the fixed [source]/[target] AMS
 /// addresses, then [connect]. Issue [request]s (each returns a `Future` that
-/// resolves to the raw response payload); observe liveness via [isConnected]
+/// resolves to a record of the AMS `errorCode` and the raw response payload);
+/// observe liveness via [isConnected]
 /// and [done]; tear down with [close].
 class AmsConnection {
   /// Creates a connection over [transport] addressed [source]→[target].
@@ -128,14 +129,20 @@ class AmsConnection {
     );
   }
 
-  /// Sends [payload] under [commandId] and returns a Future resolving to the
-  /// correlated raw response payload (bytes after the 38-byte header prefix).
+  /// Sends [payload] under [commandId] and returns a Future resolving to a
+  /// record of the correlated AMS-header `errorCode` and the raw response
+  /// payload (bytes after the 38-byte header prefix).
+  ///
+  /// The connection surfaces the raw AMS `errorCode` WITHOUT interpreting it:
+  /// the ADS error table lives in `protocol/` and mapping is the client's job
+  /// (ERR-01 throws at both the AMS-header level and the payload-result level).
+  /// This layer stays transport-pure — it never imports the error table.
   ///
   /// A per-request [timeout] (or the connection [_defaultTimeout]) removes and
   /// errors the pending entry with [AdsTimeoutException] on expiry. The write is
   /// fire-and-forget, so two `request` calls without an `await` between them
   /// pipeline naturally.
-  Future<Uint8List> request(
+  Future<({int errorCode, Uint8List payload})> request(
     int commandId,
     Uint8List payload, {
     Duration? timeout,
@@ -150,7 +157,7 @@ class AmsConnection {
     // no orphaned completer whose armed Timer would later fire an unhandled
     // async error (CR-01).
     final frame = _buildFrame(commandId, id, payload);
-    final completer = Completer<Uint8List>();
+    final completer = Completer<({int errorCode, Uint8List payload})>();
     final timer = Timer(timeout ?? _defaultTimeout, () {
       // remove-wins: null if the response already claimed this request.
       final pending = _pending.remove(id);
@@ -269,10 +276,15 @@ class AmsConnection {
       return;
     }
 
+    // Surface the raw AMS-header errorCode alongside the payload; the client
+    // (not this transport core) maps it to an AdsException.
     pending.completer.complete(
-      Uint8List.sublistView(
-        frame,
-        AmsTcpHeader.byteLength + AmsHeader.byteLength,
+      (
+        errorCode: header.errorCode,
+        payload: Uint8List.sublistView(
+          frame,
+          AmsTcpHeader.byteLength + AmsHeader.byteLength,
+        ),
       ),
     );
   }

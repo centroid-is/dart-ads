@@ -26,7 +26,11 @@ class PendingRequest {
   PendingRequest(this.completer, this.timer, this.expectedCommandId);
 
   /// Resolves (or errors) the caller's `request()` Future exactly once.
-  final Completer<Uint8List> completer;
+  ///
+  /// Carries both the AMS-header `errorCode` and the response payload so the
+  /// client can throw at both error levels (AMS header AND payload result);
+  /// error completions carry no record.
+  final Completer<({int errorCode, Uint8List payload})> completer;
 
   /// The per-request timeout timer; cancelled the moment the response arrives.
   final Timer timer;
