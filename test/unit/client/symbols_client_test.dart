@@ -329,6 +329,68 @@ void main() {
       reply(fake, AdsCommandId.write, writePayload()); // release
       await future;
     });
+
+    test(
+        'short reply to a 4-byte typed read throws MalformedFrameException, '
+        'not RangeError (CR-01)', () async {
+      final (client, fake) = await newClient();
+      final future = client.readDintByName('MAIN.count');
+      await pumpEventQueue();
+      reply(fake, AdsCommandId.readWrite, readPayload(data: u32le(0x77)));
+      await pumpEventQueue();
+      // Device answers 2 self-consistent bytes (readLength == 2, 2 bytes):
+      // passes both error levels, but is too short for a DINT decode.
+      reply(fake, AdsCommandId.read,
+          readPayload(data: Uint8List.fromList([0x01, 0x02])));
+      await pumpEventQueue();
+      reply(fake, AdsCommandId.write, writePayload()); // release still happens
+      await expectLater(future, throwsA(isA<MalformedFrameException>()));
+      // The handle was still released (3 frames: resolve, read, release).
+      expect(fake.written, hasLength(3));
+    });
+
+    test(
+        'short reply to an 8-byte typed read throws MalformedFrameException, '
+        'not RangeError (CR-01)', () async {
+      final (client, fake) = await newClient();
+      final future = client.readLrealByName('MAIN.temp');
+      await pumpEventQueue();
+      reply(fake, AdsCommandId.readWrite, readPayload(data: u32le(0x78)));
+      await pumpEventQueue();
+      reply(fake, AdsCommandId.read,
+          readPayload(data: Uint8List.fromList([0, 0, 0, 0]))); // 4 < 8
+      await pumpEventQueue();
+      reply(fake, AdsCommandId.write, writePayload()); // release still happens
+      await expectLater(future, throwsA(isA<MalformedFrameException>()));
+    });
+
+    test('empty reply to a BOOL read throws MalformedFrameException (CR-01)',
+        () async {
+      final (client, fake) = await newClient();
+      final future = client.readBoolByName('MAIN.flag');
+      await pumpEventQueue();
+      reply(fake, AdsCommandId.readWrite, readPayload(data: u32le(0x79)));
+      await pumpEventQueue();
+      reply(fake, AdsCommandId.read, readPayload(data: Uint8List(0)));
+      await pumpEventQueue();
+      reply(fake, AdsCommandId.write, writePayload()); // release still happens
+      await expectLater(future, throwsA(isA<MalformedFrameException>()));
+    });
+
+    test('short STRING reply decodes without RangeError (CR-01)', () async {
+      // STRING has no fixed decode width: decodeString stops at the first NUL
+      // (or buffer end), so a short device reply must decode, not crash.
+      final (client, fake) = await newClient();
+      final future = client.readStringByName('MAIN.text', 81);
+      await pumpEventQueue();
+      reply(fake, AdsCommandId.readWrite, readPayload(data: u32le(0x7A)));
+      await pumpEventQueue();
+      reply(fake, AdsCommandId.read,
+          readPayload(data: Uint8List.fromList([0x61, 0x62, 0x00]))); // "ab\0"
+      await pumpEventQueue();
+      reply(fake, AdsCommandId.write, writePayload()); // release
+      expect(await future, 'ab');
+    });
   });
 
   group('AdsHandle', () {

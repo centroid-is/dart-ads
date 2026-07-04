@@ -306,9 +306,35 @@ class AdsClient {
   // unchanged (SYM-04) — these are additive conveniences, not a replacement.
   // STRING/WSTRING take the symbol's declared buffer `size` (STRING(80) == 81).
 
+  /// Reads [size] bytes of [name] for a fixed-size typed decode, validating the
+  /// device-controlled reply length BEFORE any codec decode.
+  ///
+  /// `decodeReadResponse` only checks that the declared `readLength` matches
+  /// the bytes present — the device chooses `readLength`, so a hostile or buggy
+  /// peer can answer with FEWER bytes than requested and still pass both error
+  /// levels. Guarding here (mirroring [getHandleByName]) preserves the
+  /// exception-family contract: hostile wire bytes surface as
+  /// [MalformedFrameException], never as a raw `RangeError` escaping a
+  /// fixed-size codec decoder (threat T-7-02).
+  Future<Uint8List> _readFixedByName(
+    String name,
+    int size,
+    Duration? timeout,
+  ) async {
+    final data = await readByName(name, size, timeout: timeout);
+    if (data.length < size) {
+      throw MalformedFrameException(
+        'typed read of "$name" returned ${data.length} bytes, expected $size',
+        length: size,
+        offset: 0,
+      );
+    }
+    return data;
+  }
+
   /// Reads a BOOL by [name].
   Future<bool> readBoolByName(String name, {Duration? timeout}) async =>
-      codec.decodeBool(await readByName(name, 1, timeout: timeout));
+      codec.decodeBool(await _readFixedByName(name, 1, timeout));
 
   /// Writes a BOOL by [name].
   Future<void> writeBoolByName(String name, bool value, {Duration? timeout}) =>
@@ -316,7 +342,7 @@ class AdsClient {
 
   /// Reads a BYTE/USINT (u8) by [name].
   Future<int> readByteByName(String name, {Duration? timeout}) async =>
-      codec.decodeByte(await readByName(name, 1, timeout: timeout));
+      codec.decodeByte(await _readFixedByName(name, 1, timeout));
 
   /// Writes a BYTE/USINT (u8) by [name].
   Future<void> writeByteByName(String name, int value, {Duration? timeout}) =>
@@ -324,7 +350,7 @@ class AdsClient {
 
   /// Reads a SINT (i8) by [name].
   Future<int> readSintByName(String name, {Duration? timeout}) async =>
-      codec.decodeSint(await readByName(name, 1, timeout: timeout));
+      codec.decodeSint(await _readFixedByName(name, 1, timeout));
 
   /// Writes a SINT (i8) by [name].
   Future<void> writeSintByName(String name, int value, {Duration? timeout}) =>
@@ -332,7 +358,7 @@ class AdsClient {
 
   /// Reads a WORD/UINT (u16) by [name].
   Future<int> readWordByName(String name, {Duration? timeout}) async =>
-      codec.decodeWord(await readByName(name, 2, timeout: timeout));
+      codec.decodeWord(await _readFixedByName(name, 2, timeout));
 
   /// Writes a WORD/UINT (u16) by [name].
   Future<void> writeWordByName(String name, int value, {Duration? timeout}) =>
@@ -340,7 +366,7 @@ class AdsClient {
 
   /// Reads an INT (i16) by [name].
   Future<int> readIntByName(String name, {Duration? timeout}) async =>
-      codec.decodeInt(await readByName(name, 2, timeout: timeout));
+      codec.decodeInt(await _readFixedByName(name, 2, timeout));
 
   /// Writes an INT (i16) by [name].
   Future<void> writeIntByName(String name, int value, {Duration? timeout}) =>
@@ -348,7 +374,7 @@ class AdsClient {
 
   /// Reads a DWORD/UDINT (u32) by [name].
   Future<int> readDwordByName(String name, {Duration? timeout}) async =>
-      codec.decodeDword(await readByName(name, 4, timeout: timeout));
+      codec.decodeDword(await _readFixedByName(name, 4, timeout));
 
   /// Writes a DWORD/UDINT (u32) by [name].
   Future<void> writeDwordByName(String name, int value, {Duration? timeout}) =>
@@ -356,7 +382,7 @@ class AdsClient {
 
   /// Reads a DINT (i32) by [name].
   Future<int> readDintByName(String name, {Duration? timeout}) async =>
-      codec.decodeDint(await readByName(name, 4, timeout: timeout));
+      codec.decodeDint(await _readFixedByName(name, 4, timeout));
 
   /// Writes a DINT (i32) by [name].
   Future<void> writeDintByName(String name, int value, {Duration? timeout}) =>
@@ -364,7 +390,7 @@ class AdsClient {
 
   /// Reads a REAL (f32) by [name].
   Future<double> readRealByName(String name, {Duration? timeout}) async =>
-      codec.decodeReal(await readByName(name, 4, timeout: timeout));
+      codec.decodeReal(await _readFixedByName(name, 4, timeout));
 
   /// Writes a REAL (f32) by [name].
   Future<void> writeRealByName(String name, double value,
@@ -373,7 +399,7 @@ class AdsClient {
 
   /// Reads an LREAL (f64) by [name].
   Future<double> readLrealByName(String name, {Duration? timeout}) async =>
-      codec.decodeLreal(await readByName(name, 8, timeout: timeout));
+      codec.decodeLreal(await _readFixedByName(name, 8, timeout));
 
   /// Writes an LREAL (f64) by [name].
   Future<void> writeLrealByName(String name, double value,
