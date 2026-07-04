@@ -31,8 +31,8 @@ void main() {
   // is provably a command/result mismatch, never a timeout firing.
   const requestTimeout = Duration(seconds: 10);
 
-  // The mock seeds one fixture at (0xF005, 0x123) = 42 (LE u32).
-  const seedGroup = 0xF005;
+  // The mock seeds one fixture at (0x4025, 0x123) = 42 (LE u32).
+  const seedGroup = 0x4025;
   const seedOffset = 0x123;
   final seedBytes = Uint8List.fromList(const [0x2A, 0x00, 0x00, 0x00]);
 

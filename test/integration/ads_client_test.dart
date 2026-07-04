@@ -24,9 +24,9 @@ void main() {
   // a real ADS result or a thrown AdsException, not because a timeout fired.
   const requestTimeout = Duration(seconds: 10);
 
-  // The mock seeds one fixture at (0xF005, 0x123) = 42 as a little-endian u32,
+  // The mock seeds one fixture at (0x4025, 0x123) = 42 as a little-endian u32,
   // so a pure Read (no prior Write on this connection) is still meaningful.
-  const seedGroup = 0xF005;
+  const seedGroup = 0x4025;
   const seedOffset = 0x123;
   final seedBytes = Uint8List.fromList(const [0x2A, 0x00, 0x00, 0x00]);
 

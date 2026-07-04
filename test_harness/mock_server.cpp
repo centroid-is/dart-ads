@@ -718,7 +718,7 @@ static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN,
         uint16_t curDeviceState = 0;
         // Seed one fixture matching the read_req golden key so a pure Read (with no
         // prior Write) returns meaningful bytes.
-        store[{ 0xF005u, 0x123u }] = { 0x2A, 0x00, 0x00, 0x00 };
+        store[{ 0x4025u, 0x123u }] = { 0x2A, 0x00, 0x00, 0x00 };  // seed moved off 0xF005 (now SYM_VALBYHND)
         // Seed the value store at each symbol's {iGroup, iOffs} so a read-by-handle
         // with no prior write returns a well-defined zero-filled buffer of the
         // symbol's declared size (MAIN.counter=4, flag=1, text=81, temp=8).

@@ -187,7 +187,7 @@ void main() {
       // length and the exact contents (a strictly stronger check than the C++,
       // which only asserts the byte count).
       final client = await connectClient();
-      const group = 0xF005;
+      const group = 0x4025;
       const offset = 0x8192;
       final payload =
           Uint8List.fromList([for (var i = 0; i < 8192; i++) (i * 31) & 0xFF]);
@@ -250,7 +250,7 @@ void main() {
       // (the mock's write-then-read semantics), asserting the returned bytes
       // equal the written bytes; the value flips each iteration.
       final client = await connectClient();
-      const group = 0xF005;
+      const group = 0x4025;
       const offset = 0x4247; // 'MAIN.byByte' analogue
       var value = Uint8List.fromList(const [0xDE, 0xAD, 0xBE, 0xEF]);
 
@@ -275,7 +275,7 @@ void main() {
       // C++ (L698): write then read the same handle in a loop, asserting the
       // read equals the written value (flipping each iteration).
       final client = await connectClient();
-      const group = 0xF005;
+      const group = 0x4025;
       const offset = 0x0042;
       var value = Uint8List.fromList(const [0x01, 0x23, 0x45, 0x67]);
 
@@ -359,7 +359,7 @@ void main() {
       // the 4 MiB FrameAssembler cap, exercising reassembly on both ends under a
       // large frame (threat T-3-05 boundary).
       final client = await connectClient();
-      const group = 0xF005;
+      const group = 0x4025;
       const offset = 0x1000;
       const size = 64 * 1024;
       final payload =
@@ -393,11 +393,11 @@ void main() {
       // proves the invoke-ID correlation map never crosses responses under load:
       // every one of the mixed reads/writes must resolve to ITS OWN correct
       // response (threat T-3-05). Reads target the connection's seeded fixture
-      // (0xF005,0x123)=42, a value stable under any interleave with the
+      // (0x4025,0x123)=42, a value stable under any interleave with the
       // distinct-key writes, so a mis-correlated response is detectable.
       final client = await connectClient();
       const fanout = 100;
-      const seedGroup = 0xF005;
+      const seedGroup = 0x4025;
       const seedOffset = 0x123;
       final seedBytes = Uint8List.fromList(const [0x2A, 0x00, 0x00, 0x00]);
 
