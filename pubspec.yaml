@@ -7,9 +7,16 @@ version: 0.0.1
 environment:
   sdk: '>=3.5.0 <4.0.0'
 
+# The `ads` CLI entrypoint (bin/ads.dart). Lets `dart pub global activate` yield
+# an `ads` binary; the .pubignore trimming is Phase 9 (PKG-02).
+executables:
+  ads: ads
+
 dependencies:
   # Annotations only (zero runtime cost): @visibleForTesting on internal seams.
   meta: ^1.16.0
+  # CLI arg parsing + CommandRunner/Command for the seven ADS verbs.
+  args: ^2.7.0
 
 dev_dependencies:
   test: ^1.31.0
