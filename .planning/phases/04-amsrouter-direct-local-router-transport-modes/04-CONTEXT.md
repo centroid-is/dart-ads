@@ -83,5 +83,12 @@ Requirements: ROUTE-01, ROUTE-02, ROUTE-03, ERR-02 (+ TEST-05 slice: router/AmsA
 
 - Remote AddRoute over UDP :48899 with credentials → v2 (ROUTE-04); CLI `addroute` → v2
 - Reconnect/route-recovery semantics → v2 (RECON-01)
+- AMS/TCP `0x1000` port-connect registration against a REAL TwinCAT router → v2
+  (code-review WR-04): `LocalRouterTarget` currently self-allocates its 30000+
+  source port and NetId, which the C++ mock accepts (it echoes any source
+  address) but an installed TwinCAT router would not — replies would be
+  dropped. Beyond AdsLib parity (the C++ AdsLib IS its own router and never
+  dials one); documented as mock-verified-only in the `LocalRouterTarget`
+  dartdoc and README until implemented
 
 </deferred>

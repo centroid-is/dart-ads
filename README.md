@@ -54,3 +54,18 @@ for now the reverse route is configured on the target.
 
 In `LocalRouterTarget` mode the local router owns the route table, so no reverse
 route is required and the router returns its own routing errors unchanged.
+
+### LocalRouterTarget limitation: no `0x1000` port registration yet
+
+A **real** TwinCAT router requires clients to register via the AMS/TCP `0x1000`
+port-connect handshake (receiving a router-assigned local NetId + AMS port)
+before it routes replies back. `LocalRouterTarget` does **not** perform that
+handshake yet: it self-allocates a source port from this library's private
+`30000+` range and stamps its own source NetId. The C++ mock used by the
+integration tests accepts this (it echoes any source address), but an installed
+TwinCAT router would drop the replies.
+
+`LocalRouterTarget` is therefore **mock-verified only** today. The `0x1000`
+registration is beyond AdsLib parity (the C++ AdsLib *is* its own router and
+never dials one) and is deferred to v2; against real PLCs, use `DirectTarget`
+with a reverse route.

@@ -57,6 +57,17 @@ final class DirectTarget extends TransportTarget {
 /// route on the target is required and the router returns its own routing errors
 /// (e.g. `0x0007` missing-route) unchanged — the direct-mode `0x0745` enrichment
 /// is intentionally NOT applied in this mode.
+///
+/// **Limitation (mock-verified only):** a REAL TwinCAT router requires clients
+/// to register first via the AMS/TCP `0x1000` port-connect handshake (receiving
+/// a router-assigned local NetId + AMS port) before it will route replies back.
+/// This mode does not perform that handshake yet — it self-allocates a source
+/// port from the library's private `30000+` range and stamps its own source
+/// NetId, which the integration mock accepts (it echoes any source address)
+/// but an installed TwinCAT router would not: replies would be dropped. The
+/// `0x1000` registration is beyond AdsLib parity (the C++ AdsLib IS its own
+/// router and never dials one) and is deferred to a follow-up (v2); until
+/// then, use [DirectTarget] against real PLCs.
 final class LocalRouterTarget extends TransportTarget {
   /// Dials the local router at [host]:[port] (defaults to `127.0.0.1:48898`).
   const LocalRouterTarget({this.host = '127.0.0.1', this.port = 48898});
