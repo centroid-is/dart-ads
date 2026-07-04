@@ -23,7 +23,20 @@ import 'dart:typed_data';
 class PendingRequest {
   /// Creates a pending-request record binding a [completer] to its timeout
   /// [timer] and the [expectedCommandId] the correlated response must carry.
-  PendingRequest(this.completer, this.timer, this.expectedCommandId);
+  ///
+  /// The optional [onResponseSync] hook lets a request act on its correlated
+  /// response SYNCHRONOUSLY — inside the same `_onFrame` turn, before the
+  /// caller's Future completes. This is the seam that closes the notification
+  /// first-listen race: `addNotification` registers its demux controller in the
+  /// hook so a 0x08 frame sharing the Add-response's inbound chunk finds the
+  /// handle already mapped (an `await`-continuation would run one microtask too
+  /// late, after that same-chunk 0x08 was already dispatched and dropped).
+  PendingRequest(
+    this.completer,
+    this.timer,
+    this.expectedCommandId, [
+    this.onResponseSync,
+  ]);
 
   /// Resolves (or errors) the caller's `request()` Future exactly once.
   ///
@@ -38,4 +51,10 @@ class PendingRequest {
   /// The ADS command-ID this request was sent with; a response whose command
   /// differs is a protocol violation and is rejected rather than delivered.
   final int expectedCommandId;
+
+  /// Optional synchronous side-effect run on the correlated response BEFORE
+  /// [completer] completes, receiving the AMS-header `errorCode` and the raw
+  /// response payload. Invoked defensively (a throwing hook must never break
+  /// correlation). See the constructor doc for the race it closes.
+  final void Function(int errorCode, Uint8List payload)? onResponseSync;
 }

@@ -538,9 +538,15 @@ class _DirectTimeoutConnection extends AmsConnection {
     int commandId,
     Uint8List payload, {
     Duration? timeout,
+    void Function(int errorCode, Uint8List payload)? onResponseSync,
   }) async {
     try {
-      return await super.request(commandId, payload, timeout: timeout);
+      return await super.request(
+        commandId,
+        payload,
+        timeout: timeout,
+        onResponseSync: onResponseSync,
+      );
     } on AdsTimeoutException {
       throw AdsRoutingException.directTimeout(sourceNetId);
     }

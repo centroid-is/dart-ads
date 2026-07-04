@@ -18,12 +18,14 @@ import 'dart:typed_data';
 
 import 'package:meta/meta.dart';
 
+import '../protocol/ads_error.dart';
 import '../protocol/ams_header.dart';
 import '../protocol/ams_net_id.dart';
 import '../protocol/ams_tcp_header.dart';
 import '../protocol/constants.dart';
 import '../protocol/exceptions.dart';
 import '../protocol/frame_assembler.dart';
+import '../protocol/notifications.dart';
 import '../transport/transport.dart';
 import 'exceptions.dart';
 import 'pending_request.dart';
@@ -58,10 +60,11 @@ class AmsConnection {
   /// Invoke-ID → in-flight request. `remove` is the sole completion claim.
   final Map<int, PendingRequest> _pending = <int, PendingRequest>{};
 
-  /// Notification-handle → demux controller. Empty in Phase 2 (Phase 5 attaches
-  /// real Streams); the disconnect fan-out already closes each with error.
-  final Map<int, StreamController<Uint8List>> _demuxControllers =
-      <int, StreamController<Uint8List>>{};
+  /// Notification-handle → demux controller. Populated by [addNotification]
+  /// (synchronously, in the Add-response correlation hook) and drained by the
+  /// cmd 0x08 dispatch; the disconnect fan-out error-closes each and clears it.
+  final Map<int, StreamController<AdsNotification>> _demuxControllers =
+      <int, StreamController<AdsNotification>>{};
 
   /// The Phase-1 reassembler turning inbound TCP chunks into whole frames.
   late final FrameAssembler _assembler;
@@ -88,6 +91,12 @@ class AmsConnection {
 
   /// Count of inbound device-notification (cmd 0x08) frames routed to demux.
   int notificationFrames = 0;
+
+  /// Count of cmd 0x08 frames whose payload failed to parse (hostile / truncated
+  /// / lying-count). The 0x08 branch contains its own errors: a malformed frame
+  /// bumps this counter and is dropped, but the connection survives so one bad
+  /// notification cannot kill other live subscriptions (threat T-5-02).
+  int droppedNotifications = 0;
 
   /// Opens the underlying transport to [host]:[port] and wires the inbound
   /// byte stream into the frame reassembler.
@@ -142,10 +151,16 @@ class AmsConnection {
   /// errors the pending entry with [AdsTimeoutException] on expiry. The write is
   /// fire-and-forget, so two `request` calls without an `await` between them
   /// pipeline naturally.
+  ///
+  /// [onResponseSync] runs synchronously the instant the response is correlated
+  /// (before the returned Future completes and before any later frame in the
+  /// same inbound chunk is dispatched); [addNotification] uses it to register a
+  /// demux controller ahead of a same-chunk 0x08 frame.
   Future<({int errorCode, Uint8List payload})> request(
     int commandId,
     Uint8List payload, {
     Duration? timeout,
+    void Function(int errorCode, Uint8List payload)? onResponseSync,
   }) {
     if (!isConnected) {
       throw const AdsConnectionException('not connected');
@@ -163,7 +178,7 @@ class AmsConnection {
       final pending = _pending.remove(id);
       pending?.completer.completeError(AdsTimeoutException(id, commandId));
     });
-    _pending[id] = PendingRequest(completer, timer, commandId);
+    _pending[id] = PendingRequest(completer, timer, commandId, onResponseSync);
     try {
       _transport.add(frame);
     } catch (_) {
@@ -183,6 +198,80 @@ class AmsConnection {
   Future<void> close() async {
     _failClose(const AdsConnectionException('closed by client'));
     await done;
+  }
+
+  /// Sends an AddDeviceNotification (cmd 0x06) [payload], registers [ctrl] under
+  /// the returned handle, and resolves to that handle.
+  ///
+  /// TRUE SYNCHRONOUS REGISTRATION (closes the first-listen race, threat
+  /// T-5-11): the controller is mapped in the [request] `onResponseSync` hook —
+  /// which fires inside `_onFrame`, in the same synchronous turn the Add-response
+  /// is correlated, BEFORE this Future completes. Because inbound TCP chunks are
+  /// dispatched frame-by-frame in one drain, a 0x08 frame for this handle that
+  /// shares the Add-response's chunk is parsed AFTER the hook has already mapped
+  /// the handle, so its first sample is delivered rather than dropped. A
+  /// post-`await` registration would instead run one microtask too late (after
+  /// that same-chunk 0x08 was already dispatched) — hence the hook, not the
+  /// obvious `await`-then-register.
+  ///
+  /// A non-zero AMS-header `errorCode` or a non-zero decoded `result` throws an
+  /// [AdsException] to the caller; in those cases the hook registered nothing
+  /// (it early-returns before the map write), so no dangling controller is left.
+  Future<int> addNotification(
+    Uint8List payload,
+    StreamController<AdsNotification> ctrl, {
+    Duration? timeout,
+  }) async {
+    final resp = await request(
+      AdsCommandId.addDeviceNotification,
+      payload,
+      timeout: timeout,
+      onResponseSync: (errorCode, respPayload) {
+        // Only a fully-successful response registers the controller. Any error
+        // path leaves the map untouched; the await-side below throws for it.
+        if (errorCode != 0) {
+          return;
+        }
+        final decoded = decodeAddNotificationResponse(respPayload);
+        if (decoded.result != 0) {
+          return;
+        }
+        _demuxControllers[decoded.handle] = ctrl;
+      },
+    );
+    if (resp.errorCode != 0) {
+      throw AdsException.fromCode(resp.errorCode);
+    }
+    final decoded = decodeAddNotificationResponse(resp.payload);
+    if (decoded.result != 0) {
+      throw AdsException.fromCode(decoded.result);
+    }
+    return decoded.handle;
+  }
+
+  /// Sends a DeleteDeviceNotification (cmd 0x07) [payload], then removes [handle]
+  /// from the demux map and closes its controller.
+  ///
+  /// The map mutation happens only after the request round-trips, so a dead
+  /// connection surfaces its [AdsConnectionException] to the caller (the client
+  /// swallows it — a stale handle is never Deleted against a reconnected
+  /// session, threat T-5-10; on disconnect `_failClose` has already invalidated
+  /// and cleared every handle locally).
+  Future<void> deleteNotification(
+    int handle,
+    Uint8List payload, {
+    Duration? timeout,
+  }) async {
+    await request(
+      AdsCommandId.deleteDeviceNotification,
+      payload,
+      timeout: timeout,
+    );
+    // Fire-and-forget the close: a single-subscription controller with no live
+    // listener only completes its close() future once listened, so awaiting it
+    // here could hang. The stream is done regardless; the caller does not need
+    // to observe teardown completion.
+    unawaited(_demuxControllers.remove(handle)?.close() ?? Future<void>.value());
   }
 
   /// Allocates the next monotonic u32 invoke-ID, wrapping `0xFFFFFFFF → 1` and
@@ -254,9 +343,18 @@ class AmsConnection {
     final header =
         AmsHeader.decode(ByteData.sublistView(frame), AmsTcpHeader.byteLength);
 
-    // Demux branch BEFORE the invoke-ID lookup (PROTO-04).
+    // Demux branch BEFORE the invoke-ID lookup (PROTO-04). Parse the nested
+    // 0x08 stream and route each sample to its handle's controller (an
+    // unregistered handle is silently ignored, C++ parity).
     if (header.commandId == AdsCommandId.deviceNotification) {
       notificationFrames++;
+      final notificationPayload = Uint8List.sublistView(
+        frame,
+        AmsTcpHeader.byteLength + AmsHeader.byteLength,
+      );
+      for (final n in parseNotificationStream(notificationPayload)) {
+        _demuxControllers[n.handle]?.add(n);
+      }
       return;
     }
 
@@ -278,14 +376,26 @@ class AmsConnection {
 
     // Surface the raw AMS-header errorCode alongside the payload; the client
     // (not this transport core) maps it to an AdsException.
+    final responsePayload = Uint8List.sublistView(
+      frame,
+      AmsTcpHeader.byteLength + AmsHeader.byteLength,
+    );
+
+    // Synchronous response hook runs BEFORE completion: addNotification uses it
+    // to register its demux controller in this same _onFrame turn, so a 0x08
+    // frame later in the same inbound chunk finds the handle already mapped.
+    // A throwing hook must never break correlation, so it is wrapped defensively
+    // (the caller's Future still completes below).
+    try {
+      pending.onResponseSync?.call(header.errorCode, responsePayload);
+    } catch (_) {
+      // Swallow: the hook is a best-effort side-effect, not part of the
+      // response contract. The await-side of addNotification re-decodes and
+      // throws for real error conditions.
+    }
+
     pending.completer.complete(
-      (
-        errorCode: header.errorCode,
-        payload: Uint8List.sublistView(
-          frame,
-          AmsTcpHeader.byteLength + AmsHeader.byteLength,
-        ),
-      ),
+      (errorCode: header.errorCode, payload: responsePayload),
     );
   }
 

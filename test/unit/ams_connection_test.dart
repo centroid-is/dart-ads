@@ -302,11 +302,16 @@ void main() {
       final f = conn.request(0x02, Uint8List(0));
       final id = outboundInvokeId(fake.written.single);
 
-      // A device-notification frame carries cmd 0x08 and invoke-ID 0.
+      // A device-notification frame carries cmd 0x08 and invoke-ID 0. The 0x08
+      // branch now PARSES its payload, so it must be a well-formed (here empty:
+      // length=4, stamps=0) notification stream rather than a bare placeholder.
+      final emptyStream = Uint8List(8);
+      ByteData.sublistView(emptyStream).setUint32(0, 4, Endian.little);
       fake.feed(buildFrame(
         invokeId: 0,
         commandId: AdsCommandId.deviceNotification,
         stateFlags: AmsStateFlags.request,
+        payload: emptyStream,
       ));
       await pump();
 
