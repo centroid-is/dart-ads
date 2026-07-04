@@ -49,6 +49,14 @@ export 'src/protocol/commands.dart'
         decodeWriteControlResponse,
         decodeReadWriteResponse;
 
+/// The device-notification public value types: the [AdsNotification] sample and
+/// the [AdsTransmissionMode] enum consumers pass to `AdsClient.subscribe`. The
+/// internal payload builders, response decoders, and `parseNotificationStream`
+/// stay package-private (transcription/demux internals), like the other
+/// `build*Payload` helpers.
+export 'src/protocol/notifications.dart'
+    show AdsNotification, AdsTransmissionMode;
+
 /// The streaming AMS/TCP frame reassembler.
 export 'src/protocol/frame_assembler.dart' show FrameAssembler;
 

@@ -29,6 +29,7 @@ import '../protocol/ads_error.dart';
 import '../protocol/ams_net_id.dart';
 import '../protocol/commands.dart';
 import '../protocol/constants.dart';
+import '../protocol/notifications.dart';
 import 'ads_types.dart';
 
 /// An idiomatic async client for the six core ADS commands over a single
@@ -171,6 +172,106 @@ class AdsClient {
       revision: decoded.revision,
       build: decoded.build,
     );
+  }
+
+  /// Subscribes to device notifications for the variable at
+  /// ([indexGroup], [indexOffset]), returning a lazy single-subscription
+  /// `Stream<AdsNotification>` (NOTIF-01/02/04).
+  ///
+  /// Lifecycle state machine (RESEARCH Pattern 3):
+  ///
+  ///   * **Lazy Add.** NO AddDeviceNotification is sent until the stream is
+  ///     first listened. On first listen [onListen] builds the 40-byte Add
+  ///     payload — [mode].code at offset 12, [maxDelay]/[cycleTime] converted to
+  ///     100ns units (`Duration.inMicroseconds * 10`) at 16/20 — and calls
+  ///     [AmsConnection.addNotification], which registers this stream's
+  ///     controller as the demux target ahead of the first sample.
+  ///   * **Always-Delete cancel.** [onCancel] always attempts a
+  ///     DeleteDeviceNotification for the acquired handle via [_deleteQuietly],
+  ///     which NEVER throws — cancel must always complete (threat T-5-12).
+  ///   * **Cancel-during-pending-add.** If [onCancel] fires before the Add
+  ///     resolves, `handle` is still `null`, so the Delete is deferred: once the
+  ///     Add finally returns its handle, [onListen] sees `cancelled` and
+  ///     immediately releases it — no leak, no throw (threat T-5-01).
+  ///   * **Add failure.** An Add error surfaces to the listener via `addError`
+  ///     (not as a leaked handle); no Delete is issued because none was acquired.
+  ///
+  /// No auto-resubscribe (v2 RECON-01): a dead stream stays dead. On disconnect
+  /// the connection's fan-out error-closes this controller and invalidates the
+  /// handle locally, so a later stale-handle Delete against a reconnected session
+  /// is impossible (threat T-5-10).
+  Stream<AdsNotification> subscribe({
+    required int indexGroup,
+    required int indexOffset,
+    required int length,
+    AdsTransmissionMode mode = AdsTransmissionMode.serverOnChange,
+    Duration cycleTime = Duration.zero,
+    Duration maxDelay = Duration.zero,
+    Duration? timeout,
+  }) {
+    // `handle` is null until the Add resolves; `cancelled` records an onCancel
+    // that raced ahead of that resolution.
+    int? handle;
+    var cancelled = false;
+    late final StreamController<AdsNotification> controller;
+    controller = StreamController<AdsNotification>(
+      onListen: () async {
+        try {
+          final payload = buildAddNotificationPayload(
+            indexGroup: indexGroup,
+            indexOffset: indexOffset,
+            length: length,
+            transMode: mode.code,
+            maxDelay100ns: maxDelay.inMicroseconds * 10,
+            cycleTime100ns: cycleTime.inMicroseconds * 10,
+          );
+          final acquired = await connection.addNotification(
+            payload,
+            controller,
+            timeout: timeout,
+          );
+          if (cancelled) {
+            // Cancelled while the Add was in flight: release the handle the
+            // moment it arrives so it is never leaked.
+            await _deleteQuietly(acquired);
+            return;
+          }
+          handle = acquired;
+        } catch (e, st) {
+          // Surface the Add failure to the listener rather than leaking a handle.
+          if (!controller.isClosed) {
+            controller.addError(e, st);
+          }
+        }
+      },
+      onCancel: () async {
+        cancelled = true;
+        final acquired = handle;
+        if (acquired != null) {
+          await _deleteQuietly(acquired);
+        }
+        // If `acquired` is null the Add is still pending; the onListen path
+        // performs the deferred Delete once the handle arrives.
+      },
+    );
+    return controller.stream;
+  }
+
+  /// Sends a DeleteDeviceNotification for [handle], swallowing any error.
+  ///
+  /// Cancel must never throw (threat T-5-12): a dead connection surfaces
+  /// [AdsConnectionException] and a stale/reconnected session surfaces a device
+  /// error, but the handle is invalidated locally on disconnect regardless
+  /// (stale-handle rule, threat T-5-10), so both are safe to discard here.
+  Future<void> _deleteQuietly(int handle) async {
+    try {
+      await connection.deleteNotification(
+        handle,
+        buildDeleteNotificationPayload(handle: handle),
+      );
+    } catch (_) {
+      // Intentionally swallowed — see doc comment.
+    }
   }
 
   /// The single AMS-level throw site: sends [adsPayload] under [commandId],
