@@ -38,8 +38,8 @@ Requirements for initial release (full AdsLib parity). Each maps to roadmap phas
 ### Routing & Transport Modes
 
 - [x] **ROUTE-01**: User can select transport at runtime — direct-to-peer or via a local TwinCAT router (127.0.0.1:48898)
-- [ ] **ROUTE-02**: Embedded AmsRouter maps AmsNetId → connection and allocates local AMS ports
-- [ ] **ROUTE-03**: User can configure the source AmsNetId and a local route table for direct mode
+- [x] **ROUTE-02**: Embedded AmsRouter maps AmsNetId → connection and allocates local AMS ports
+- [x] **ROUTE-03**: User can configure the source AmsNetId and a local route table for direct mode
 
 ### Device Notifications (Streams)
 
@@ -148,8 +148,8 @@ Which phases cover which requirements. Populated during roadmap creation.
 | CMD-06 | Phase 3 | Complete |
 | ERR-01 | Phase 3 | Complete |
 | ROUTE-01 | Phase 4 | Complete |
-| ROUTE-02 | Phase 4 | Pending |
-| ROUTE-03 | Phase 4 | Pending |
+| ROUTE-02 | Phase 4 | Complete |
+| ROUTE-03 | Phase 4 | Complete |
 | ERR-02 | Phase 4 | Complete |
 | NOTIF-01 | Phase 5 | Pending |
 | NOTIF-02 | Phase 5 | Pending |

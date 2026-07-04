@@ -24,8 +24,8 @@ A Dart application can reliably connect to a Beckhoff PLC and read, write, and s
 
 **Protocol & transport**
 - [x] AMS/TCP framing (AMS header, AMS/TCP header) implemented in pure Dart — Validated in Phase 1 (byte-for-byte vs C++ goldens)
-- [ ] Configurable transport: connect directly to a remote ADS peer *and* via a local TwinCAT router on `:48898`, selectable at runtime
-- [ ] Dart port of the AmsRouter (local routing so no TwinCAT install is required for direct connections)
+- [x] Configurable transport: direct + local-router modes selectable at runtime — Validated in Phase 4 (dual-mode integration proof; real-TwinCAT 0x1000 registration tracked v2)
+- [x] Dart port of the AmsRouter — Validated in Phase 4 (port allocator, route table, source stamping, C++ parity tests)
 - [x] Connection lifecycle: open, close, error/timeout handling — Validated in Phase 2 (reconnect deferred to v2 per RECON-01)
 
 **ADS commands (full AdsLib parity)**
@@ -34,7 +34,7 @@ A Dart application can reliably connect to a Beckhoff PLC and read, write, and s
 - [ ] Device notifications: add/delete subscriptions delivered as Dart `Stream`s
 - [ ] Symbol access by name (handle-by-name resolution, symbol upload/browse)
 - [ ] Sum (batched) commands — multiple reads/writes/notifications in one request
-- [ ] Route / AmsRouter management (add/list routes)
+- [x] Route / AmsRouter management (add/remove routes, setLocalAddress) — Validated in Phase 4
 
 **API surface**
 - [ ] Idiomatic async Dart API: `Future`s for request/response, `Stream`s for notifications, non-blocking sockets
@@ -109,4 +109,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-04 after Phase 3 (Core ADS Commands & Error Mapping) completion*
+*Last updated: 2026-07-04 after Phase 4 (AmsRouter & Transport Modes) completion*
