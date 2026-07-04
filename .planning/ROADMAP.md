@@ -18,7 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 4: AmsRouter & Direct / Local-Router Transport Modes** - NetId routing, runtime transport selection, and actionable 1861 route errors (completed 2026-07-04)
 - [x] **Phase 5: Device Notifications as Streams** - Subscribe/cancel as Dart Streams with nested stamp/sample demux and handle lifecycle (completed 2026-07-04)
 - [x] **Phase 6: Sum (Batched) Commands** - Batched read/write/readwrite with per-item partial-failure results (completed 2026-07-04)
-- [ ] **Phase 7: Symbol Access, Browse & Typed Values** - Handle-by-name, symbol table browse, and scalar type conversion
+- [x] **Phase 7: Symbol Access, Browse & Typed Values** - Handle-by-name, symbol table browse, and scalar type conversion (completed 2026-07-04)
 - [ ] **Phase 8: Dart CLI** - browse/read/write/subscribe/pull/push/action operator tool over the full library
 - [ ] **Phase 9: Packaging & Publishing** - Native-only platform declaration, .pubignore, and pub.dev publish readiness
 
@@ -147,7 +147,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   - [x] 07-03-PLAN.md — Mock: 4-symbol table + 0xF003/5/6/B/C dispatch + NUL-tolerant lookup + sym-handle-count magic group (wave 1)
   - [x] 07-04-PLAN.md — dump_golden symbol fixtures (handle req/res, uploadinfo, 2-symbol padded blob) + byte-parity test (wave 2)
   - [x] 07-05-PLAN.md — AdsClient handle lifecycle + AdsHandle RAII + browse + typed methods + barrel exports (wave 2)
-  - [ ] 07-06-PLAN.md — Live integration: handle leak proof + staleness, browse, typed round-trips (wave 3)
+  - [x] 07-06-PLAN.md — Live integration: handle leak proof + staleness, browse, typed round-trips (wave 3)
 **UI hint**: no
 
 ### Phase 8: Dart CLI
@@ -188,6 +188,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 4. AmsRouter & Transport Modes | 4/4 | Complete   | 2026-07-04 |
 | 5. Device Notifications as Streams | 6/6 | Complete   | 2026-07-04 |
 | 6. Sum (Batched) Commands | 6/6 | Complete   | 2026-07-04 |
-| 7. Symbol Access, Browse & Typed Values | 5/6 | In Progress|  |
+| 7. Symbol Access, Browse & Typed Values | 6/6 | Complete   | 2026-07-04 |
 | 8. Dart CLI | 0/TBD | Not started | - |
 | 9. Packaging & Publishing | 0/TBD | Not started | - |

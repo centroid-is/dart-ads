@@ -57,9 +57,9 @@ Requirements for initial release (full AdsLib parity). Each maps to roadmap phas
 
 ### Symbols & Typed Values
 
-- [ ] **SYM-01**: User can resolve a symbol handle by name, read/write by handle, and release the handle [0xF003/0xF005/0xF006], with automatic release
-- [ ] **SYM-02**: User can browse the PLC symbol table (upload-info + blob), parsing variable-length symbol entries (name, type, size, iGroup, iOffset)
-- [ ] **SYM-03**: Library converts PLC scalar types (BOOL, BYTE/USINT, WORD/UINT, INT, DWORD/UDINT, DINT, REAL, LREAL, STRING, WSTRING) to/from Dart values
+- [x] **SYM-01**: User can resolve a symbol handle by name, read/write by handle, and release the handle [0xF003/0xF005/0xF006], with automatic release
+- [x] **SYM-02**: User can browse the PLC symbol table (upload-info + blob), parsing variable-length symbol entries (name, type, size, iGroup, iOffset)
+- [x] **SYM-03**: Library converts PLC scalar types (BOOL, BYTE/USINT, WORD/UINT, INT, DWORD/UDINT, DINT, REAL, LREAL, STRING, WSTRING) to/from Dart values
 - [ ] **SYM-04**: Library exposes a raw `Uint8List` escape hatch for values it does not type-convert
 
 ### CLI
@@ -159,9 +159,9 @@ Which phases cover which requirements. Populated during roadmap creation.
 | SUM-02 | Phase 6 | Complete |
 | SUM-03 | Phase 6 | Complete |
 | SUM-04 | Phase 6 | Complete |
-| SYM-01 | Phase 7 | Pending |
-| SYM-02 | Phase 7 | Pending |
-| SYM-03 | Phase 7 | Pending |
+| SYM-01 | Phase 7 | Complete |
+| SYM-02 | Phase 7 | Complete |
+| SYM-03 | Phase 7 | Complete |
 | SYM-04 | Phase 7 | Pending |
 | CLI-01 | Phase 8 | Pending |
 | CLI-02 | Phase 8 | Pending |
