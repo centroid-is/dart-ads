@@ -13,7 +13,12 @@ findings:
   warning: 4
   info: 6
   total: 11
-status: issues_found
+status: resolved
+fixed_at: 2026-07-04T00:00:00Z
+fix_scope: critical_warning
+fixed: [CR-01, WR-01, WR-02, WR-03, WR-04]
+open: [IN-01, IN-02, IN-03, IN-04, IN-05, IN-06]
+fix_report: 05-REVIEW-FIX.md
 ---
 
 # Phase 5: Code Review Report
@@ -21,7 +26,7 @@ status: issues_found
 **Reviewed:** 2026-07-04
 **Depth:** standard
 **Files Reviewed:** 4 (primary scope) + 8 context files (protocol tests, demux tests, subscribe tests, integration tests, goldens, `pending_request.dart`, `dart_ads.dart`, `dump_golden.cpp`)
-**Status:** issues_found
+**Status:** resolved — CR-01 + WR-01..WR-04 fixed 2026-07-04 (see `05-REVIEW-FIX.md`); IN-01..IN-06 remain open (Info findings out of fix scope)
 
 ## Summary
 
@@ -87,6 +92,8 @@ Future<void> deleteNotification(
 
 Add a regression test mirroring the reproduction: subscribe A (handle H) → pipeline Delete(H) + Add B → feed both responses in one chunk with B's response reusing H → assert B's controller is still registered, open, and receives a subsequent 0x08 sample for H.
 
+**Resolution:** Fixed in `fb1ad12` — identity-guarded removal exactly as suggested (`victim` captured before the round-trip; `remove` only when `identical`). Regression test `recycled handle: a stale Delete continuation must not close a NEW subscription...` added to `notification_demux_test.dart` (verified to fail against the unfixed code, pass with the fix).
+
 ## Warnings
 
 ### WR-01: `deleteNotification` ignores both error levels and leaks the demux entry on request failure
@@ -118,6 +125,8 @@ final result = decodeDeleteNotificationResponse(resp.payload);
 if (result != 0) throw AdsException.fromCode(result);
 ```
 
+**Resolution:** Fixed in `43c57ff` — implemented as suggested: identity-guarded local invalidation moved into a `finally` (unconditional on success/refusal/timeout/disconnect), then both error levels checked and thrown as `AdsException`. `decodeDeleteNotificationResponse` gains its production caller. `AdsClient._deleteQuietly` still swallows by policy, so the cancel path never throws (locked decision). Three unit tests added: refused Delete (result `0x752`) throws but cleans up; AMS-level `errorCode` throws after cleanup; Delete timeout leaves no zombie demux entry.
+
 ### WR-02: Mock allocates attacker-controlled `cbLength` bytes per notification — unguarded up to 4 GiB
 
 **File:** `test_harness/mock_server.cpp:759, 864, 889`
@@ -137,6 +146,8 @@ if (!getU32(body, bodyLen, 8, cbLength) || cbLength > kMaxFrameBytes) {
 }
 ```
 
+**Resolution:** Fixed in `9d28e44` — variant of the suggestion: `cbLength > kMaxFrameBytes` is rejected at the ADD dispatch site, but WITH a real ADS error response (result `0x705 ADSERR_DEVICE_INVALIDSIZE`, handle 0, nothing registered) instead of silence, so the Dart client fails fast rather than timing out. The `kMaxFrameBytes` doc note now covers ADD's `cbLength`. Integration regression test added: hostile Add (`length: 0xFFFFFFFF`) surfaces `AdsException(0x705)`, mock survives, handle count stays 0.
+
 ### WR-03: Integration "first-listen race" test cannot fail when the race is lost
 
 **File:** `test/integration/ads_notification_test.dart:187-220`
@@ -150,6 +161,8 @@ Net: a regression that reintroduces the T-5-11 race would sail through this inte
 
 **Fix:** Either (a) assert on delivery of *all* `notifyBurst` samples AND have the mock coalesce the Add response + first burst frame into a single `send()` (a `--notify-burst-coalesced` variant), making chunk boundaries deterministic; or (b) rename/re-document the test as "burst delivery works end-to-end" and leave the race proof to the unit test — do not keep an assertion (`droppedNotifications == 0`) that structurally cannot fail for the advertised reason.
 
+**Resolution:** Fixed in `4191d39` — option (a), strengthened: (1) `AmsConnection` gains an `unregisteredNotifications` counter (parsed samples with no mapped handle are still ignored per C++ parity, but now observable — closing gap 1); (2) the mock's `--notify-burst` path sends the Add response + ALL burst frames in ONE `send()` (deterministic same-chunk, closing gap 2; `--notify-burst` combined with `--fragment`/`--coalesce`/`--delay-ms` is now rejected at argv, exit 2); (3) the test asserts ALL burst samples delivered AND `unregisteredNotifications == 0` — a post-`await` registration regression now fails both. Unit test for the counter added to the unregistered-handle case.
+
 ### WR-04: Mock coalesce-mode flush heuristic can strand notification frames and deadlock a client
 
 **File:** `test_harness/mock_server.cpp:369-379` (interacting with the Phase-5 emission paths at 715, 738, 765, 887-895)
@@ -162,6 +175,8 @@ Net: a regression that reintroduces the T-5-11 race would sail through this inte
 No current test combines these flags, so this is latent — but the harness advertises the modes as orthogonal (header comment, lines 22-35) and nothing enforces otherwise.
 
 **Fix:** Reject unsupported combinations in `main()` argv parsing (`--notify-burst`/notification magic groups with `--coalesce` or `--delay-ms` → exit 2 with a message), or exempt notification/burst emission from coalescing by passing `TransmitMode::Normal` to `emitNotification`/the burst `sendResponse` call.
+
+**Resolution:** Fixed in `97afddd` (argv guard landed with WR-03 in `4191d39`) — both halves: (1) `--notify-burst` with `--fragment`/`--coalesce`/`--delay-ms` exits 2 at argv parse with a message; (2) notification frames are exempt from the coalesce buffer via `sendNotificationFrame` — any buffered response is flushed FIRST (preserving wire order), then the 0x08 goes out in its own `send()`, so a write-triggered notification under `--coalesce` can never strand a response the client is awaiting. The header comment documents both restrictions (`--fragment` still applies to notifications: segmentation is a legitimate reassembly exercise).
 
 ## Info
 
