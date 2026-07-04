@@ -30,6 +30,7 @@ import '../protocol/ams_net_id.dart';
 import '../protocol/commands.dart';
 import '../protocol/constants.dart';
 import '../protocol/notifications.dart';
+import '../protocol/sum_commands.dart';
 import 'ads_types.dart';
 
 /// An idiomatic async client for the six core ADS commands over a single
@@ -123,6 +124,87 @@ class AdsClient {
     final decoded = decodeReadWriteResponse(response);
     _throwOnResult(decoded.result);
     return decoded.data;
+  }
+
+  /// Issues a SUMUP_READ (0xF080) batch — reads every item in [items] in a
+  /// SINGLE ReadWrite round-trip — returning one [SumResult] per item in request
+  /// order (SUM-01).
+  ///
+  /// Two-layer error model (SUM-04): a non-zero AMS-header `errorCode` (via
+  /// [_command]) or a non-zero outer ADS `result` word (via [_throwOnResult])
+  /// throws [AdsException] BEFORE any list is returned. A per-item error word is
+  /// NOT a throw — it surfaces as [SumResult.errorCode] with `isSuccess == false`
+  /// so a single bad item never fails the whole batch.
+  ///
+  /// An empty [items] returns `[]` immediately with NO wire call (empty-batch
+  /// guard) — there is nothing to read and a zero-item ReadWrite envelope is
+  /// meaningless.
+  Future<List<SumResult<Uint8List>>> sumRead(
+    List<SumReadRequest> items, {
+    Duration? timeout,
+  }) async {
+    if (items.isEmpty) return <SumResult<Uint8List>>[];
+    final (inner, readLength) = buildSumReadPayload(items);
+    final payload = buildReadWritePayload(
+      indexGroup: AdsIndexGroup.sumUpRead,
+      indexOffset: items.length,
+      readLength: readLength,
+      writeData: inner,
+    );
+    final response = await _command(AdsCommandId.readWrite, payload, timeout);
+    final decoded = decodeReadWriteResponse(response);
+    _throwOnResult(decoded.result);
+    return decodeSumReadResponse(decoded.data, items);
+  }
+
+  /// Issues a SUMUP_WRITE (0xF081) batch — writes every item in [items] in a
+  /// SINGLE ReadWrite round-trip — returning one `SumResult<void>` per item in
+  /// request order (SUM-02).
+  ///
+  /// Same two-layer error model as [sumRead]: outer AMS / ADS-result errors
+  /// throw; a per-item error word populates [SumResult.errorCode] and never
+  /// throws (SUM-04). An empty [items] returns `[]` with NO wire call.
+  Future<List<SumResult<void>>> sumWrite(
+    List<SumWriteRequest> items, {
+    Duration? timeout,
+  }) async {
+    if (items.isEmpty) return <SumResult<void>>[];
+    final (inner, readLength) = buildSumWritePayload(items);
+    final payload = buildReadWritePayload(
+      indexGroup: AdsIndexGroup.sumUpWrite,
+      indexOffset: items.length,
+      readLength: readLength,
+      writeData: inner,
+    );
+    final response = await _command(AdsCommandId.readWrite, payload, timeout);
+    final decoded = decodeReadWriteResponse(response);
+    _throwOnResult(decoded.result);
+    return decodeSumWriteResponse(decoded.data, items.length);
+  }
+
+  /// Issues a SUMUP_READWRITE (0xF082) batch — writes-then-reads every item in
+  /// [items] in a SINGLE ReadWrite round-trip — returning one [SumResult] per
+  /// item in request order (SUM-03).
+  ///
+  /// Same two-layer error model as [sumRead]: outer AMS / ADS-result errors
+  /// throw; a per-item error word populates [SumResult.errorCode] and never
+  /// throws (SUM-04). An empty [items] returns `[]` with NO wire call.
+  Future<List<SumResult<Uint8List>>> sumReadWrite(
+    List<SumReadWriteRequest> items, {
+    Duration? timeout,
+  }) async {
+    if (items.isEmpty) return <SumResult<Uint8List>>[];
+    final (inner, readLength) = buildSumReadWritePayload(items);
+    final payload = buildReadWritePayload(
+      indexGroup: AdsIndexGroup.sumUpReadWrite,
+      indexOffset: items.length,
+      readLength: readLength,
+      writeData: inner,
+    );
+    final response = await _command(AdsCommandId.readWrite, payload, timeout);
+    final decoded = decodeReadWriteResponse(response);
+    _throwOnResult(decoded.result);
+    return decodeSumReadWriteResponse(decoded.data, items.length);
   }
 
   /// Reads the device's ADS/device run state.
