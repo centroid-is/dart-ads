@@ -32,6 +32,7 @@ import '../protocol/commands.dart';
 import '../protocol/constants.dart';
 import '../protocol/exceptions.dart';
 import '../protocol/notifications.dart';
+import '../protocol/range_check.dart';
 import '../protocol/sum_commands.dart';
 import '../protocol/symbols.dart';
 import '../protocol/value_codec.dart' as codec;
@@ -190,9 +191,16 @@ class AdsClient {
   ///
   /// Per the vendored AdsLib the handle is the 4-byte little-endian DATA payload
   /// and indexOffset is 0 — NOT the other way around.
+  ///
+  /// [handle] is validated as a u32 ([checkUint]) BEFORE encoding —
+  /// `ByteData.setUint32` silently truncates to the low 32 bits, which would
+  /// release a DIFFERENT (possibly live) handle instead of failing. This keeps
+  /// the three lifecycle methods consistent: [readByHandle] / [writeByHandle]
+  /// already route the handle through the payload builders' `checkUint`.
   Future<void> releaseHandle(int handle, {Duration? timeout}) {
     final data = Uint8List(4);
-    ByteData.sublistView(data).setUint32(0, handle, Endian.little);
+    ByteData.sublistView(data)
+        .setUint32(0, checkUint(handle, 32, 'handle'), Endian.little);
     return write(
       indexGroup: AdsIndexGroup.symbolReleaseHandle,
       indexOffset: 0,

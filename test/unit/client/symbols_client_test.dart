@@ -206,6 +206,18 @@ void main() {
       reply(fake, AdsCommandId.write, writePayload());
       await future;
     });
+
+    test(
+        'releaseHandle rejects an out-of-range handle instead of silently '
+        'truncating (WR-02)', () async {
+      final (client, fake) = await newClient();
+      // ByteData.setUint32 keeps only the low 32 bits, so without validation
+      // 0x1_0000_0001 would release handle 1 — a different, possibly-live
+      // handle. checkUint must throw BEFORE anything hits the wire.
+      expect(() => client.releaseHandle(0x100000001), throwsArgumentError);
+      expect(() => client.releaseHandle(-1), throwsArgumentError);
+      expect(fake.written, isEmpty);
+    });
   });
 
   group('readByName / writeByName', () {
