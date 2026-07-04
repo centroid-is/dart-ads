@@ -2,4 +2,13 @@ tags:
   unit:
   integration:
     timeout: 30s
+  # Long-running endurance/soak tests (e.g. testEndurance). Declared here so it
+  # is a KNOWN tag (undeclared tags warn) and `skip` EXCLUDES it from every
+  # default run — bare `dart test`, the fast `dart test -x integration` matrix,
+  # AND `dart test -t integration` — so the soak never runs unattended in CI.
+  # Run it explicitly (locally, against the built mock) with:
+  #   dart test -t slow --run-skipped
+  # and exclude it deliberately (already excluded by default) with `-x slow`.
+  slow:
+    skip: "excluded by default; run with: dart test -t slow --run-skipped"
   golden:

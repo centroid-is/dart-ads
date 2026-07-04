@@ -118,8 +118,16 @@ static const uint32_t kErrAmsGroup = 0xE7700001u;
 //   kNotifyBurst2x2Group -> a Write emits ONE crafted 0x08 frame with 2 stamps
 //                           x 2 samples (distinct timestamps/handles/data) — the
 //                           fixture that proves the nested stamp/sample parser.
+//   kNotifyHostileGroup  -> a Write emits ONE deliberately MALFORMED 0x08 frame
+//                           (a sample whose declared size overruns the payload)
+//                           whose AMS/TCP wrapper is well-formed, so it reaches
+//                           the Dart notification parser as a complete frame and
+//                           is CONTAINED there (droppedNotifications++, connection
+//                           stays alive) — the hostile-frame survival proof
+//                           (threat T-5-02). Then answers a normal WRITE result 0.
 static const uint32_t kNotifyCountGroup = 0xE7700002u;
 static const uint32_t kNotifyBurst2x2Group = 0xE7700003u;
+static const uint32_t kNotifyHostileGroup = 0xE7700004u;
 
 // Inbound max-frame guard, mirroring the Dart FrameAssembler's 4 MiB cap: a
 // single hostile 6-byte wrapper declaring a multi-GiB length must not make
@@ -431,6 +439,41 @@ static void emitNotification(int fd, TransmitMode mode, size_t fragmentN,
     sendResponse(fd, frame, mode, fragmentN, coalesceBuf);
 }
 
+// Emit ONE deliberately MALFORMED 0x08 notification frame. The AMS/TCP wrapper is
+// well-formed (correct length), so the Dart FrameAssembler hands the whole frame
+// to the notification parser as a complete frame; the PAYLOAD is internally
+// inconsistent (a single sample declares size 0xFFFFFFFF, far past the payload
+// end), so parseNotificationStream throws and the connection's 0x08 dispatch
+// CONTAINS it (droppedNotifications++), never poisoning the assembler or killing
+// other subscriptions (threat T-5-02). The self-describing `length` field is set
+// consistent with the actual bytes so the failure is the sample-size overrun, not
+// a trivially-detectable length mismatch.
+static void emitHostileNotification(int fd, TransmitMode mode, size_t fragmentN,
+                                    std::vector<uint8_t>& coalesceBuf,
+                                    const AmsNetId& rTarget, uint16_t rTargetPort,
+                                    const AmsNetId& rSource, uint16_t rSourcePort)
+{
+    std::vector<uint8_t> p;
+    putU32(p, 0);                    // length placeholder (backfilled below)
+    putU32(p, 1);                    // stamps = 1
+    putU64(p, kMockFiletimeBase);    // stamp timestamp
+    putU32(p, 1);                    // sampleCount = 1
+    putU32(p, 0x1u);                 // sample handle
+    putU32(p, 0xFFFFFFFFu);          // sample size: overruns the payload -> throws
+    // No sample data bytes follow: the declared size cannot be satisfied.
+    const uint32_t length = static_cast<uint32_t>(p.size() - 4);
+    p[0] = static_cast<uint8_t>(length & 0xFF);
+    p[1] = static_cast<uint8_t>((length >> 8) & 0xFF);
+    p[2] = static_cast<uint8_t>((length >> 16) & 0xFF);
+    p[3] = static_cast<uint8_t>((length >> 24) & 0xFF);
+
+    Frame f(p.size(), p.data());
+    std::vector<uint8_t> frame =
+        wrapResponse(f, AoEHeader::DEVICE_NOTIFICATION, rTarget, rTargetPort,
+                     rSource, rSourcePort, 0);
+    sendResponse(fd, frame, mode, fragmentN, coalesceBuf);
+}
+
 // ---- Live accept loop (built in Phase 1; exercised over a socket in Phase 2) -
 //
 // delayMs > 0 (--delay-ms): defer the FIRST response of each connection and
@@ -688,6 +731,21 @@ static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN,
                             haveRes = true;
                             break;
                         }
+                        // Magic hostile group: emit ONE malformed 0x08 frame the
+                        // Dart parser must drop (connection stays alive), then a
+                        // normal WRITE result 0. Not stored — a pure trigger.
+                        if (group == kNotifyHostileGroup) {
+                            emitHostileNotification(fd, mode, fragmentN, coalesceBuf,
+                                rTarget, rTargetPort, rSource, rSourcePort);
+                            std::vector<uint8_t> p;
+                            putU32(p, 0); // result = 0
+                            Frame f(p.size(), p.data());
+                            res = wrapResponse(f, AoEHeader::WRITE, rTarget,
+                                               rTargetPort, rSource, rSourcePort,
+                                               rInvoke);
+                            haveRes = true;
+                            break;
+                        }
                         store[{ group, offset }] =
                             std::vector<uint8_t>(body + 12, body + 12 + length);
                         // Write-triggered serverOnChange: emit ONE 1-stamp x
@@ -804,18 +862,6 @@ static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN,
                         }
                         const uint32_t handle = nextHandle++;
                         notes[handle] = { group, offset, cbLength, transMode };
-                        // --notify-burst N: emit N single-sample frames for the
-                        // new handle IMMEDIATELY, BEFORE the ADD response goes out,
-                        // so notifications race ahead of / share the TCP chunk with
-                        // the response — deliberately exposing the first-listen race
-                        // the Dart client must survive (Pitfall 2 in 05-RESEARCH).
-                        for (int b = 0; b < notifyBurst; ++b) {
-                            const std::vector<uint8_t> data(cbLength, 0);
-                            emitNotification(fd, mode, fragmentN, coalesceBuf,
-                                             rTarget, rTargetPort, rSource, rSourcePort,
-                                             { { kMockFiletimeBase,
-                                                 { { handle, data } } } });
-                        }
                         std::vector<uint8_t> p;
                         putU32(p, 0);      // result = 0 (success)
                         putU32(p, handle); // PLC-assigned notification handle
@@ -823,7 +869,34 @@ static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN,
                         res = wrapResponse(f, AoEHeader::ADD_DEVICE_NOTIFICATION,
                                            rTarget, rTargetPort, rSource, rSourcePort,
                                            rInvoke);
-                        haveRes = true;
+                        // --notify-burst N: emit N single-sample frames for the new
+                        // handle right AFTER the ADD response, back-to-back on the
+                        // same connection so the response and the first notification
+                        // coalesce into one inbound TCP chunk. This exercises the
+                        // first-listen race the Dart client MUST win via synchronous
+                        // handle registration (05-RESEARCH Pitfall 2 / Pattern 2A):
+                        // the handle is only knowable from the response, so a
+                        // notification can only be routed once the response has been
+                        // correlated — emitting AFTER the response is the winnable
+                        // same-chunk race (emitting BEFORE would be unroutable by any
+                        // client, as the handle is not yet known). The response is
+                        // sent here (not via the outer haveRes path) so the bursts
+                        // provably follow it; --notify-burst is never combined with
+                        // --delay-ms in the suite, so bypassing the deferral is safe.
+                        if (notifyBurst > 0) {
+                            sendResponse(fd, res, mode, fragmentN, coalesceBuf);
+                            for (int b = 0; b < notifyBurst; ++b) {
+                                const std::vector<uint8_t> data(cbLength, 0);
+                                emitNotification(fd, mode, fragmentN, coalesceBuf,
+                                                 rTarget, rTargetPort, rSource,
+                                                 rSourcePort,
+                                                 { { kMockFiletimeBase,
+                                                     { { handle, data } } } });
+                            }
+                            haveRes = false; // already sent above
+                        } else {
+                            haveRes = true;
+                        }
                         break;
                     }
                     case AoEHeader::DEL_DEVICE_NOTIFICATION: {
