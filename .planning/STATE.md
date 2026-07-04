@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
+status: verifying
 stopped_at: context exhaustion at 75% (2026-07-04)
-last_updated: "2026-07-04T18:38:20.549Z"
-last_activity: 2026-07-04 -- Phase 09 execution started
+last_updated: "2026-07-04T18:47:27.843Z"
+last_activity: 2026-07-04
 progress:
   total_phases: 9
-  completed_phases: 8
+  completed_phases: 9
   total_plans: 47
-  completed_plans: 46
-  percent: 89
+  completed_plans: 47
+  percent: 100
 ---
 
 # Project State
@@ -27,8 +27,8 @@ See: .planning/PROJECT.md (updated 2026-07-03)
 
 Phase: 09 (Packaging & Publishing) — EXECUTING
 Plan: 1 of 1
-Status: Executing Phase 09
-Last activity: 2026-07-04 -- Phase 09 execution started
+Status: Phase complete — ready for verification
+Last activity: 2026-07-04
 
 Progress: [██████████] 100%
 
@@ -67,6 +67,7 @@ Progress: [██████████] 100%
 | Phase 05 P06 | 20min | 2 tasks | 4 files |
 | Phase 06 P06 | 4min | 2 tasks | 1 files |
 | Phase 08 P07 | 4min | 2 tasks | 2 files |
+| Phase 09 P01 | 12min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -93,6 +94,8 @@ Recent decisions affecting current work:
 - [Phase ?]: [Phase 03]: testAdsTimeout adapts the C++ get/set-timeout config API to a real per-request timeout firing; port-handle error cases map to the Dart connection lifecycle (covered-by-equivalent).
 - [Phase ?]: [Phase 05]: slow tag uses skip: + --run-skipped so the endurance soak is excluded from every default/CI run yet remains runnable on demand (only package:test mechanism satisfying both).
 - [Phase ?]: [Phase 05]: mock --notify-burst emits AFTER the Add-response; burst-before-response is unroutable by any client, so the winnable same-chunk race the synchronous registration solves needs burst-after-response.
+- [Phase ?]: [Phase 09]: homepage/repository omitted from pubspec (no public git remote); the only remaining dry-run item is pub's non-blocking homepage recommendation
+- [Phase ?]: [Phase 09]: LICENSE (MIT) + CHANGELOG.md added — hard pub requirements for a clean dry-run
 
 ### Pending Todos
 
@@ -116,6 +119,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-04T18:17:08.355Z
+Last session: 2026-07-04T18:47:14.691Z
 Stopped at: context exhaustion at 75% (2026-07-04)
 Resume file: None

@@ -20,7 +20,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 6: Sum (Batched) Commands** - Batched read/write/readwrite with per-item partial-failure results (completed 2026-07-04)
 - [x] **Phase 7: Symbol Access, Browse & Typed Values** - Handle-by-name, symbol table browse, and scalar type conversion (completed 2026-07-04)
 - [x] **Phase 8: Dart CLI** - browse/read/write/subscribe/pull/push/action operator tool over the full library (completed 2026-07-04)
-- [ ] **Phase 9: Packaging & Publishing** - Native-only platform declaration, .pubignore, and pub.dev publish readiness
+- [x] **Phase 9: Packaging & Publishing** - Native-only platform declaration, .pubignore, and pub.dev publish readiness (completed 2026-07-04)
 
 ## Phase Details
 
@@ -197,4 +197,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 6. Sum (Batched) Commands | 6/6 | Complete   | 2026-07-04 |
 | 7. Symbol Access, Browse & Typed Values | 6/6 | Complete   | 2026-07-04 |
 | 8. Dart CLI | 7/7 | Complete   | 2026-07-04 |
-| 9. Packaging & Publishing | 0/TBD | Not started | - |
+| 9. Packaging & Publishing | 1/1 | Complete   | 2026-07-04 |
