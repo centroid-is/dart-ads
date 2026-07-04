@@ -111,6 +111,40 @@ void main() {
       const offset = 0x00;
       final zero = Uint8List.fromList(const [0, 0, 0, 0]);
 
+      // The mock zero-fills reads of never-written keys, so writing zeros and
+      // reading zeros back would pass even if the Write path were broken.
+      // First document that zero-fill default on a key this test never writes…
+      expect(
+        await client.read(
+          indexGroup: group,
+          indexOffset: 0xBEEF, // never written in this test
+          length: zero.length,
+          timeout: requestTimeout,
+        ),
+        equals(zero),
+        reason: 'mock zero-fills reads of never-written keys',
+      );
+
+      // …then prove the store is live with a distinctive sentinel round-trip,
+      // so the zero loop below verifies the OVERWRITE, not the zero-fill.
+      final sentinel = Uint8List.fromList(const [0x5A, 0xA5, 0x5A, 0xA5]);
+      await client.write(
+        indexGroup: group,
+        indexOffset: offset,
+        data: sentinel,
+        timeout: requestTimeout,
+      );
+      expect(
+        await client.read(
+          indexGroup: group,
+          indexOffset: offset,
+          length: sentinel.length,
+          timeout: requestTimeout,
+        ),
+        equals(sentinel),
+        reason: 'sentinel round-trip proves the write-back store is live',
+      );
+
       await client.write(
         indexGroup: group,
         indexOffset: offset,
