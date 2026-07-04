@@ -65,5 +65,21 @@ void main() {
       expect(res, isA<ReadStateResponse>());
       expect(res.result, equals(0));
     });
+
+    test('notification value types are reachable through the barrel', () {
+      // AdsTransmissionMode: the enum consumers pass to subscribe(); its wire
+      // code is the public contract.
+      expect(AdsTransmissionMode.serverOnChange.code, equals(4));
+
+      // AdsNotification: the delivered sample value type, constructible and
+      // readable purely through the public import.
+      final sample = AdsNotification(
+        handle: 0x2A,
+        timestamp: DateTime.utc(2026),
+        data: Uint8List.fromList([1, 2, 3]),
+      );
+      expect(sample.handle, equals(0x2A));
+      expect(sample.data, hasLength(3));
+    });
   });
 }
