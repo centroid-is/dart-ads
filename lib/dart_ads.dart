@@ -91,3 +91,10 @@ export 'src/protocol/constants.dart'
 /// [MalformedFrameException], [AdsTimeoutException], and [AdsConnectionException].
 export 'src/protocol/ads_error.dart'
     show AdsException, adsErrorName, adsErrorText;
+
+/// The [AdsClient] (L6-lite): the idiomatic async API over the six core ADS
+/// commands, with both-levels [AdsException] mapping. Its typed returns
+/// [AdsStateInfo] (from `readState`) and [DeviceInfo] (from `readDeviceInfo`)
+/// are pure value types.
+export 'src/client/ads_client.dart' show AdsClient;
+export 'src/client/ads_types.dart' show AdsStateInfo, DeviceInfo;
