@@ -371,7 +371,7 @@ String decodeWString(Uint8List buf) {           // UTF-16LE, NUL(0x0000)-termina
 | A3 | ADST_* numeric IDs (INT16=2, REAL64=5, BIT=33, etc.) per pyads/Beckhoff — not in vendored headers | Codec table | Low — stored only, not used to drive this phase's codec; v2 consumes it |
 | A4 | Invalid/released handle → 0x710 in mock (0x1809 SYMBOLNOTACTIVE also defensible) | Mock | None functional — pick one and assert consistently |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Invalid-handle error code: 0x710 vs 0x1809?** — **RESOLVED (planning, 2026-07-04):** mock returns **0x710** for BOTH unknown-name and invalid/released-handle (A4 frozen); AdsHandle invalidates on 0x710/0x711. Locked into Plans 03/05/06.
    - Known: real TwinCAT returns a device error on unknown handle; 0x710 (SYMBOLNOTFOUND) and 0x1809 (SYMBOLNOTACTIVE, in ads_error.dart:136) are both plausible.
