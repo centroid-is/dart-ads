@@ -45,10 +45,13 @@ void main() {
     );
 
     // Each Future resolves its OWN response despite the inverted wire order.
+    // request() now yields a record; the decoder takes the payload slice.
     final r1 = await f1;
     final r2 = await f2;
-    expect(decodeReadDeviceInfoResponse(r1).name, equals('Dart ADS Mock'));
-    expect(decodeReadDeviceInfoResponse(r2).name, equals('Dart ADS Mock'));
+    expect(
+        decodeReadDeviceInfoResponse(r1.payload).name, equals('Dart ADS Mock'));
+    expect(
+        decodeReadDeviceInfoResponse(r2.payload).name, equals('Dart ADS Mock'));
 
     // The on-wire proof of correlation under reordering: nothing was dropped.
     expect(conn.droppedResponses, equals(0));

@@ -85,8 +85,15 @@ void main() {
       fake.feed(buildFrame(invokeId: id1, commandId: 0x02, payload: respA));
       fake.feed(buildFrame(invokeId: id2, commandId: 0x02, payload: respB));
 
-      expect(await f1, equals(respA));
-      expect(await f2, equals(respB));
+      // request() now resolves to a record: the surfaced AMS-header errorCode
+      // (0 on a normal response, via buildFrame's default) plus the payload.
+      final r1 = await f1;
+      final r2 = await f2;
+      expect(r1.payload, equals(respA));
+      expect(r2.payload, equals(respB));
+      expect(r1.errorCode, 0,
+          reason: 'success response carries AMS errorCode 0');
+      expect(r2.errorCode, 0);
       expect(conn.droppedResponses, 0);
     });
   });
@@ -110,8 +117,8 @@ void main() {
       fake.feed(buildFrame(invokeId: id2, commandId: 0x02, payload: respB));
       fake.feed(buildFrame(invokeId: id1, commandId: 0x02, payload: respA));
 
-      expect(await f1, equals(respA));
-      expect(await f2, equals(respB));
+      expect((await f1).payload, equals(respA));
+      expect((await f2).payload, equals(respB));
       expect(conn.droppedResponses, 0);
     });
   });
@@ -200,7 +207,7 @@ void main() {
       final f = conn.request(0x02, Uint8List(0));
       final id = outboundInvokeId(fake.written.single);
       fake.feed(buildFrame(invokeId: id, commandId: 0x02, payload: resp));
-      expect(await f, equals(resp));
+      expect((await f).payload, equals(resp));
     });
 
     test('connect() after close() throws StateError', () async {
@@ -243,8 +250,8 @@ void main() {
       fake.feed(
           buildFrame(invokeId: 0xFFFFFFFF, commandId: 0x02, payload: respA));
       fake.feed(buildFrame(invokeId: 1, commandId: 0x02, payload: respB));
-      expect(await fA, equals(respA));
-      expect(await fB, equals(respB));
+      expect((await fA).payload, equals(respA));
+      expect((await fB).payload, equals(respB));
       expect(conn.droppedResponses, 0);
     });
   });
@@ -280,7 +287,7 @@ void main() {
       final f = conn.request(0x02, Uint8List(0));
       final id = outboundInvokeId(fake.written.single);
       fake.feed(buildFrame(invokeId: id, commandId: 0x02, payload: resp));
-      expect(await f, equals(resp));
+      expect((await f).payload, equals(resp));
       expect(conn.droppedResponses, 0);
     });
   });
@@ -309,7 +316,7 @@ void main() {
 
       // The pending request is untouched — its real response still resolves.
       fake.feed(buildFrame(invokeId: id, commandId: 0x02, payload: resp));
-      expect(await f, equals(resp));
+      expect((await f).payload, equals(resp));
       expect(conn.droppedResponses, 0);
     });
   });
