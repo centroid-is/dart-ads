@@ -118,6 +118,12 @@ class AmsRouter {
   /// older connection stays owned until it closes).
   final Map<AmsNetId, AmsConnection> _connections = <AmsNetId, AmsConnection>{};
 
+  /// EVERY [connect]-created connection still alive — including ones displaced
+  /// from [_connections] by a newer [connect] to the same NetId. [close] tears
+  /// these down; each removes itself (and frees its source-port slot) when its
+  /// `done` future completes.
+  final Set<AmsConnection> _owned = <AmsConnection>{};
+
   /// The mutable source/local AMS Net ID; all-zero until [setLocalAddress] or
   /// the first-connection `<ip>.1.1` auto-derive sets it.
   AmsNetId _localAddr = _emptyNetId;
@@ -268,7 +274,11 @@ class AmsRouter {
   ///
   /// A local AMS port (`[30000, 30128)`) is allocated as the SOURCE port; if all
   /// [numPortsMax] are taken, a `0x0508` `ROUTERERR_NOMOREQUEUES` [AdsException]
-  /// is thrown (T-4-01). The returned client is addressed
+  /// is thrown (T-4-01). The slot is owned by the returned client's connection:
+  /// it is released automatically when that connection finishes (close the
+  /// client's `connection`, a peer disconnect, or [AmsRouter.close], which
+  /// tears down every `connect`-created connection) — so reconnect cycles never
+  /// exhaust the fixed range. The returned client is addressed
   /// `source = AmsAddr(localAddr, allocatedPort)` →
   /// `target = AmsAddr(targetNetId, amsPort)`.
   ///
@@ -343,20 +353,48 @@ class AmsRouter {
       _localAddr = AmsNetId.fromIpv4(localIp);
     }
 
-    // Cache the live connection so getConnection/resolve serve THIS dialed
-    // connection (one live entry per NetId; a newer connect replaces it).
+    // Tie the source-port slot's lifetime to the connection's lifetime: when
+    // the connection finishes (clean close, disconnect, or router close), the
+    // slot returns to the pool — so long-running apps with reconnect cycles
+    // never exhaust the fixed 128-slot range (threat T-4-01 is about
+    // REPORTING exhaustion; this prevents the guaranteed leak causing it).
+    // Also cache the live connection so getConnection/resolve serve THIS
+    // dialed connection (one live entry per NetId; a newer connect replaces
+    // the cache entry while the older connection stays owned until it closes).
+    _owned.add(connection);
     _connections[targetNetId] = connection;
+    final live = connection;
+    unawaited(
+      live.done.whenComplete(() => _release(live, targetNetId, sourcePort)),
+    );
 
     return AdsClient(connection, target: target, source: source);
   }
 
-  /// Closes every live [connect]-created connection and clears the route
-  /// table (fan-out reuses the Phase-2 [AmsConnection] disconnect semantics).
+  /// Post-teardown bookkeeping for one [connect]-created [connection]: frees
+  /// its [sourcePort] slot and drops it from the owned/live registries (the
+  /// live entry only if it is still THIS connection — a newer [connect] to the
+  /// same [netId] must not be evicted by an older connection's teardown).
+  void _release(AmsConnection connection, AmsNetId netId, int sourcePort) {
+    closePort(sourcePort);
+    _owned.remove(connection);
+    if (identical(_connections[netId], connection)) {
+      _connections.remove(netId);
+    }
+  }
+
+  /// Closes every [connect]-created connection still alive and clears the
+  /// route table (fan-out reuses the Phase-2 [AmsConnection] disconnect
+  /// semantics). Each connection's `done` hook frees its source-port slot, so
+  /// a closed router leaves the full `[30000, 30128)` range available again.
   Future<void> close() async {
     _routes.clear();
-    final live = List<AmsConnection>.of(_connections.values);
+    final owned = List<AmsConnection>.of(_owned);
+    await Future.wait(owned.map((c) => c.close()));
+    // The done hooks above have already pruned these; clear defensively so a
+    // close() racing an in-flight teardown cannot strand an entry.
+    _owned.clear();
     _connections.clear();
-    await Future.wait(live.map((c) => c.close()));
   }
 }
 

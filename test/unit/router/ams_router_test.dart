@@ -273,4 +273,84 @@ void main() {
       await client.connection.close();
     });
   });
+
+  // Dart-only lifecycle guarantees for connect()-created connections: the
+  // allocated 30000+ SOURCE-port slot lives exactly as long as its connection
+  // (released on close/disconnect and by AmsRouter.close()), so a router can
+  // serve unlimited connect() calls over its lifetime, not just 128.
+  group('connect_lifecycle', () {
+    test('source-port slot is released when the connection closes', () async {
+      final router = fakeRouter()
+        ..setLocalAddress(AmsNetId(const [1, 2, 3, 4, 5, 6]));
+
+      final first = await router.connect(
+        netIdA,
+        AmsPort.plcTc3,
+        mode: const LocalRouterTarget(host: hostA),
+      );
+      expect(first.source.port, AmsRouter.portBase);
+
+      await first.connection.close();
+
+      // The freed slot is the FIRST free slot again: a fresh connect reuses
+      // 30000 instead of walking the range (i.e. no lifetime leak).
+      final second = await router.connect(
+        netIdA,
+        AmsPort.plcTc3,
+        mode: const LocalRouterTarget(host: hostA),
+      );
+      expect(second.source.port, AmsRouter.portBase);
+      await router.close();
+    });
+
+    test('router.close() closes owned connections and frees every slot',
+        () async {
+      final router = fakeRouter()
+        ..setLocalAddress(AmsNetId(const [1, 2, 3, 4, 5, 6]));
+
+      final clientA = await router.connect(
+        netIdA,
+        AmsPort.plcTc3,
+        mode: const LocalRouterTarget(host: hostA),
+      );
+      final clientB = await router.connect(
+        netIdB,
+        AmsPort.plcTc3,
+        mode: const LocalRouterTarget(host: hostB),
+      );
+      expect(clientA.source.port, isNot(equals(clientB.source.port)));
+
+      await router.close();
+
+      // Both connect()-created connections are torn down...
+      expect(clientA.connection.isConnected, isFalse);
+      expect(clientB.connection.isConnected, isFalse);
+      // ...and both slots are back in the pool (30000 is first-free again).
+      expect(router.openPort(), AmsRouter.portBase);
+      expect(router.openPort(), AmsRouter.portBase + 1);
+    });
+
+    test('a newer connect() to the same NetId survives the older teardown',
+        () async {
+      final router = fakeRouter()
+        ..setLocalAddress(AmsNetId(const [1, 2, 3, 4, 5, 6]));
+
+      final older = await router.connect(
+        netIdA,
+        AmsPort.plcTc3,
+        mode: const LocalRouterTarget(host: hostA),
+      );
+      final newer = await router.connect(
+        netIdA,
+        AmsPort.plcTc3,
+        mode: const LocalRouterTarget(host: hostA),
+      );
+      expect(router.getConnection(netIdA), same(newer.connection));
+
+      // Closing the OLDER connection must not evict the newer live entry.
+      await older.connection.close();
+      expect(router.getConnection(netIdA), same(newer.connection));
+      await router.close();
+    });
+  });
 }
