@@ -14,7 +14,13 @@ findings:
   warning: 3
   info: 6
   total: 10
-status: issues_found
+status: fixes_applied
+fixed: 2026-07-04
+fix_report: 07-REVIEW-FIX.md
+resolved:
+  critical: 1
+  warning: 3
+  info: 0
 ---
 
 # Phase 7: Code Review Report
@@ -103,6 +109,13 @@ Alternatively (and additionally, since the codec is a public-ish seam), add a
 `ArgumentError` — but the client-boundary check is the one that preserves the
 exception-family contract for wire input.
 
+**Resolution (a8de742):** FIXED. All nine fixed-size typed reads now route
+through `_readFixedByName`, which validates the device-controlled reply length
+and throws `MalformedFrameException` (expected vs actual) before any codec
+decode — mirroring the `getHandleByName` guard. Regression tests: short DINT
+(4-byte), short LREAL (8-byte), empty BOOL → `MalformedFrameException`; short
+STRING reply decodes tolerantly (no fixed width).
+
 ## Warnings
 
 ### WR-01: `AdsHandle.close()` marks itself closed before the release succeeds — a failed release permanently strands the device handle
@@ -136,6 +149,13 @@ Future<void> close({Duration? timeout}) async {
 `client.releaseHandle(h.handle)` — but the code should not silently absorb the
 retry either way.)
 
+**Resolution (c045a7a):** FIXED. `_closed` now latches only on a successful
+release, or on `0x710`/`0x711` staleness (device handle already gone — close
+completes quietly and marks the handle invalid). Any other release failure
+rethrows and leaves the handle closable; a `_closing` guard keeps concurrent
+closes single-flight. Regression tests cover failed-then-retried release and
+quiet stale-handle close.
+
 ### WR-02: `releaseHandle` silently truncates the handle to u32 — an out-of-range handle releases a *different* handle
 
 **File:** `lib/src/client/ads_client.dart:193-202`
@@ -158,6 +178,12 @@ Future<void> releaseHandle(int handle, {Duration? timeout}) {
 ```
 (`checkUint` from `range_check.dart`, as used by the payload builders.)
 
+**Resolution (ebcd49c):** FIXED as suggested — the handle now passes through
+`checkUint(handle, 32, 'handle')` before encoding, so out-of-range handles
+throw `ArgumentError` before any wire traffic, consistent with
+`readByHandle`/`writeByHandle`. Regression test asserts the throw and that
+nothing is written.
+
 ### WR-03: 0x4025 relocation incomplete at the fixture/tooling layer — goldens and generator still bake 0xF005 as a scratch group
 
 **File:** `test/golden/read_req.hex:1`, `test/golden/write_req.hex:1`, `test_harness/dump_golden.cpp:251,267,277`, `test_harness/mock_server.cpp:719-721`, `test/unit/golden_parity_test.dart:113,125,242`
@@ -178,6 +204,14 @@ relocation was supposed to eliminate.
 `dump_golden.cpp`, update the `golden_parity_test.dart` constants in the same
 commit, and correct the mock's seed comment to reference the new key
 explicitly.
+
+**Resolution (6e30da2):** FIXED. `dump_golden.cpp` scratch constants moved to
+`0x4025`; `read_req.hex`/`write_req.hex` regenerated (byte-stable on re-run —
+only the group field changes, `05f00000` → `25400000`);
+`golden_parity_test.dart` pinned to `0x4025` (including the WR-04
+range-validation case); mock seed comment now names the `{0x4025, 0x123}` key
+explicitly. `sym_*` goldens untouched (0xF003/0xF005 are correct symbol
+semantics there). `mock_server --selftest` OK.
 
 ## Info
 
