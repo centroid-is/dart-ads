@@ -14,6 +14,42 @@ const int _epochOffset = 116444736000000000;
 int _u32(Uint8List bytes, int offset) =>
     ByteData.sublistView(bytes).getUint32(offset, Endian.little);
 
+/// One sample: (handle, data).
+typedef _Sample = ({int handle, List<int> data});
+
+/// One stamp: (filetime ticks, samples).
+typedef _Stamp = ({int ticks, List<_Sample> samples});
+
+/// Builds a nested 0x08 notification-stream payload from [stamps], writing the
+/// self-describing leading `length` field (= payload.length - 4) when
+/// [selfDescribing] is true. Set it false to craft a length-mismatch frame.
+Uint8List _buildStream(List<_Stamp> stamps, {bool selfDescribing = true}) {
+  final body = BytesBuilder();
+  final stampCount = ByteData(4)..setUint32(0, stamps.length, Endian.little);
+  body.add(stampCount.buffer.asUint8List());
+  for (final stamp in stamps) {
+    final hdr = ByteData(12)
+      ..setUint64(0, stamp.ticks, Endian.little)
+      ..setUint32(8, stamp.samples.length, Endian.little);
+    body.add(hdr.buffer.asUint8List());
+    for (final sample in stamp.samples) {
+      final sh = ByteData(8)
+        ..setUint32(0, sample.handle, Endian.little)
+        ..setUint32(4, sample.data.length, Endian.little);
+      body.add(sh.buffer.asUint8List());
+      body.add(Uint8List.fromList(sample.data));
+    }
+  }
+  final bodyBytes = body.toBytes();
+  final out = BytesBuilder();
+  final len = ByteData(4)
+    ..setUint32(
+        0, selfDescribing ? bodyBytes.length : bodyBytes.length + 1, Endian.little);
+  out.add(len.buffer.asUint8List());
+  out.add(bodyBytes);
+  return out.toBytes();
+}
+
 void main() {
   group('AdsTransmissionMode', () {
     test('exposes every ADSTRANSMODE wire code', () {
@@ -160,6 +196,136 @@ void main() {
     test('throws on a payload shorter than 4 bytes', () {
       expect(
         () => decodeDeleteNotificationResponse(Uint8List(2)),
+        throwsA(isA<MalformedFrameException>()),
+      );
+    });
+  });
+
+  group('parseNotificationStream', () {
+    final ftA = dateTimeToFiletime(DateTime.utc(2026, 1, 1, 0, 0, 0));
+    final ftB = dateTimeToFiletime(DateTime.utc(2026, 1, 1, 0, 0, 1));
+
+    test('parses a nested 2-stamp x 2-sample frame into 4 notifications', () {
+      final payload = _buildStream([
+        (ticks: ftA, samples: [
+          (handle: 10, data: [0xAA]),
+          (handle: 11, data: [0xBB, 0xCC]),
+        ]),
+        (ticks: ftB, samples: [
+          (handle: 20, data: [0x01, 0x02, 0x03]),
+          (handle: 21, data: [0x04]),
+        ]),
+      ]);
+
+      final notes = parseNotificationStream(payload);
+      expect(notes.length, 4);
+
+      // Stamp 0 samples share stamp-0's timestamp.
+      expect(notes[0].handle, 10);
+      expect(notes[0].timestamp, filetimeToDateTime(ftA));
+      expect(notes[0].data, [0xAA]);
+      expect(notes[1].handle, 11);
+      expect(notes[1].timestamp, filetimeToDateTime(ftA));
+      expect(notes[1].data, [0xBB, 0xCC]);
+
+      // Stamp 1 samples share stamp-1's (distinct) timestamp.
+      expect(notes[2].handle, 20);
+      expect(notes[2].timestamp, filetimeToDateTime(ftB));
+      expect(notes[2].data, [0x01, 0x02, 0x03]);
+      expect(notes[3].handle, 21);
+      expect(notes[3].timestamp, filetimeToDateTime(ftB));
+      expect(notes[3].data, [0x04]);
+
+      expect(notes[0].timestamp, isNot(notes[2].timestamp));
+    });
+
+    test('sample data is a defensive copy that does not alias the input', () {
+      final payload = _buildStream([
+        (ticks: ftA, samples: [
+          (handle: 1, data: [0x7F]),
+        ]),
+      ]);
+      final notes = parseNotificationStream(payload);
+      final dataOffset = payload.length - 1;
+      payload[dataOffset] = 0x00; // mutate the source buffer after parsing
+      expect(notes.single.data, [0x7F], reason: 'must not alias the frame');
+    });
+
+    test('parses a single 1x1 frame into 1 notification', () {
+      final payload = _buildStream([
+        (ticks: ftA, samples: [
+          (handle: 42, data: [0xDE, 0xAD]),
+        ]),
+      ]);
+      final notes = parseNotificationStream(payload);
+      expect(notes.length, 1);
+      expect(notes.single.handle, 42);
+      expect(notes.single.data, [0xDE, 0xAD]);
+    });
+
+    test('yields an empty list when stamps == 0', () {
+      final payload = _buildStream(const []);
+      expect(parseNotificationStream(payload), isEmpty);
+    });
+
+    test('throws when payload.length < 8', () {
+      expect(
+        () => parseNotificationStream(Uint8List(4)),
+        throwsA(isA<MalformedFrameException>()),
+      );
+    });
+
+    test('throws when length + 4 != payload.length', () {
+      final payload = _buildStream([
+        (ticks: ftA, samples: [
+          (handle: 1, data: [0x01]),
+        ]),
+      ], selfDescribing: false);
+      expect(
+        () => parseNotificationStream(payload),
+        throwsA(isA<MalformedFrameException>()),
+      );
+    });
+
+    test('throws on a stamp header that overruns the buffer', () {
+      // stamps=1 but only 4 bytes of stamp header present (needs 12).
+      final body = BytesBuilder();
+      body.add((ByteData(4)..setUint32(0, 1, Endian.little)).buffer.asUint8List());
+      body.add(Uint8List(4)); // truncated stamp header
+      final bodyBytes = body.toBytes();
+      final out = BytesBuilder();
+      out.add((ByteData(4)..setUint32(0, bodyBytes.length, Endian.little))
+          .buffer
+          .asUint8List());
+      out.add(bodyBytes);
+      expect(
+        () => parseNotificationStream(out.toBytes()),
+        throwsA(isA<MalformedFrameException>()),
+      );
+    });
+
+    test('throws on a sample whose size exceeds the remaining bytes', () {
+      // One stamp, one sample declaring size 100 with no data bytes present.
+      final body = BytesBuilder();
+      body.add((ByteData(4)..setUint32(0, 1, Endian.little)).buffer.asUint8List());
+      body.add((ByteData(12)
+            ..setUint64(0, ftA, Endian.little)
+            ..setUint32(8, 1, Endian.little))
+          .buffer
+          .asUint8List());
+      body.add((ByteData(8)
+            ..setUint32(0, 5, Endian.little) // handle
+            ..setUint32(4, 100, Endian.little)) // size = 100, but no data
+          .buffer
+          .asUint8List());
+      final bodyBytes = body.toBytes();
+      final out = BytesBuilder();
+      out.add((ByteData(4)..setUint32(0, bodyBytes.length, Endian.little))
+          .buffer
+          .asUint8List());
+      out.add(bodyBytes);
+      expect(
+        () => parseNotificationStream(out.toBytes()),
         throwsA(isA<MalformedFrameException>()),
       );
     });
