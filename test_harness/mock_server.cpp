@@ -87,6 +87,27 @@ static const uint32_t kGoldenInvokeId = 1;
 //   targetNetId[6] leTargetPort[2] sourceNetId[6] leSourcePort[2] leCmdId[2] => 18
 static const size_t kStateFlagsInAms = 18;
 
+// Offset of the AMS-header errorCode (u32) within the 32-byte AMS header:
+//   ...leStateFlags[2]@18 leLength[4]@20 => leErrorCode@24. VERIFIED against
+//   lib/src/protocol/ams_header.dart line 88.
+static const size_t kAmsErrorCodeOffset = 24;
+
+// ---- Magic index-group error fixtures (Phase 3) ----------------------------
+// Two reserved, obviously-synthetic index groups let the integration/parity
+// tests inject a REAL ADS error at each of the two error levels. The request's
+// indexOffset chooses the error code, so a single fixture covers every code
+// (the offset->code trick):
+//   kErrResultGroup -> the ADS payload `result` u32 == request indexOffset
+//                      (device/payload-level error; readLength=0, empty data).
+//   kErrAmsGroup    -> the AMS-header errorCode == request indexOffset
+//                      (router/transport-level error; payload result stays 0).
+// e.g. a request to (kErrResultGroup, 0x703) yields ADSERR_DEVICE_INVALIDOFFSET;
+// a request to (kErrAmsGroup, 0x0007) yields GLOBALERR_MISSING_ROUTE in the AMS
+// header. See 03-RESEARCH.md "Magic index-group error fixtures" and the Phase 9
+// parity audit / the Dart tests in 03-05.
+static const uint32_t kErrResultGroup = 0xE7700000u;
+static const uint32_t kErrAmsGroup = 0xE7700001u;
+
 // Inbound max-frame guard, mirroring the Dart FrameAssembler's 4 MiB cap: a
 // single hostile 6-byte wrapper declaring a multi-GiB length must not make
 // the server buffer everything the peer sends. The cap also keeps
@@ -142,10 +163,15 @@ static bool getU32(const uint8_t* body, size_t bodyLen, size_t off, uint32_t& ou
 // The AoEHeader ctor hardcodes AMS_REQUEST in leStateFlags (upstream only ever
 // builds requests), so for a response we patch that single field to AMS_RESPONSE
 // after layering — the struct exposes no public setter.
+//
+// amsError (default 0): when non-zero, patch the AMS-header errorCode to this
+// value — the SAME purely-additive technique used for stateFlags above, applied
+// at the errorCode wire offset (kAmsErrorCodeOffset). The default leaves the
+// ReadDeviceInfo call site — and thus the golden/selftest — byte-identical.
 static std::vector<uint8_t> wrapResponse(Frame& f, uint16_t cmdId,
                                          const AmsNetId& target, uint16_t targetPort,
                                          const AmsNetId& source, uint16_t sourcePort,
-                                         uint32_t invokeId)
+                                         uint32_t invokeId, uint32_t amsError = 0)
 {
     const AoEHeader aoe(target, targetPort, source, sourcePort, cmdId,
                         static_cast<uint32_t>(f.size()), invokeId);
@@ -156,6 +182,13 @@ static std::vector<uint8_t> wrapResponse(Frame& f, uint16_t cmdId,
     const size_t off = sizeof(AmsTcpHeader) + kStateFlagsInAms;
     bytes[off] = static_cast<uint8_t>(AoEHeader::AMS_RESPONSE & 0xFF);
     bytes[off + 1] = static_cast<uint8_t>((AoEHeader::AMS_RESPONSE >> 8) & 0xFF);
+    if (amsError != 0) {
+        const size_t eoff = sizeof(AmsTcpHeader) + kAmsErrorCodeOffset;
+        bytes[eoff] = static_cast<uint8_t>(amsError & 0xFF);
+        bytes[eoff + 1] = static_cast<uint8_t>((amsError >> 8) & 0xFF);
+        bytes[eoff + 2] = static_cast<uint8_t>((amsError >> 16) & 0xFF);
+        bytes[eoff + 3] = static_cast<uint8_t>((amsError >> 24) & 0xFF);
+    }
     return bytes;
 }
 
@@ -460,7 +493,30 @@ static int runServer(int fixedPort, TransmitMode mode, size_t fragmentN,
                     std::vector<uint8_t> res;
                     bool haveRes = false;
 
-                    switch (aoe.cmdId()) {
+                    // --- Magic index-group error fixtures (both error levels) ---
+                    // Intercept BEFORE the normal per-command dispatch: any request
+                    // whose indexGroup == a magic sentinel injects a real ADS error
+                    // whose value is the request's indexOffset (offset->code trick).
+                    uint32_t magicGroup = 0, magicOffset = 0;
+                    const bool isMagic =
+                        getU32(body, bodyLen, 0, magicGroup) &&
+                        getU32(body, bodyLen, 4, magicOffset) &&
+                        (magicGroup == kErrResultGroup || magicGroup == kErrAmsGroup);
+                    if (isMagic) {
+                        std::vector<uint8_t> p;
+                        // payload result: chosen code for the payload-level fixture,
+                        // 0 for the AMS-level fixture (error lives in the AMS header).
+                        putU32(p, magicGroup == kErrResultGroup ? magicOffset : 0u);
+                        putU32(p, 0); // readLength = 0 (empty data — Read/ReadWrite shape)
+                        Frame f(p.size(), p.data());
+                        const uint32_t amsErr =
+                            (magicGroup == kErrAmsGroup) ? magicOffset : 0u;
+                        res = wrapResponse(f, aoe.cmdId(), rTarget, rTargetPort,
+                                           rSource, rSourcePort, rInvoke, amsErr);
+                        haveRes = true;
+                    }
+
+                    switch (isMagic ? AoEHeader::INVALID : aoe.cmdId()) {
                     case AoEHeader::READ_DEVICE_INFO: {
                         res = buildReadDeviceInfoRes(rTarget, rTargetPort,
                                                      rSource, rSourcePort, rInvoke);
