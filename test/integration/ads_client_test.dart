@@ -92,7 +92,8 @@ void main() {
       timeout: requestTimeout,
     );
 
-    expect(readBack, equals(written), reason: 'read must reflect the prior write');
+    expect(readBack, equals(written),
+        reason: 'read must reflect the prior write');
   });
 
   test('read_write', () async {
@@ -153,5 +154,64 @@ void main() {
     expect(info.version, equals(3));
     expect(info.revision, equals(1));
     expect(info.build, equals(4024));
+  });
+
+  // ---------------------------------------------------------------------------
+  // Both ADS error levels, live via the mock's magic index-groups (ERR-01).
+  //
+  // kErrResultGroup (0xE7700000) -> the mock sets the ADS payload `result` word
+  //   to the request indexOffset (payload-result level).
+  // kErrAmsGroup    (0xE7700001) -> the mock sets the AMS-header errorCode to
+  //   the request indexOffset, checked BEFORE payload decode (AMS-error level).
+  //
+  // Exercising BOTH proves an error-injection test cannot pass via the payload
+  // path alone (threat T-3-02 / research Pitfall 1 warning sign).
+  // ---------------------------------------------------------------------------
+  const kErrResultGroup = 0xE7700000;
+  const kErrAmsGroup = 0xE7700001;
+
+  test('result_error', () async {
+    // Payload-`result` level: the mock echoes offset 0x703 into the ADS result
+    // word, which the client maps to ADSERR_DEVICE_INVALIDOFFSET.
+    final client = await connectClient();
+
+    await expectLater(
+      client.read(
+        indexGroup: kErrResultGroup,
+        indexOffset: 0x703,
+        length: 4,
+        timeout: requestTimeout,
+      ),
+      throwsA(
+        isA<AdsException>().having((e) => e.code, 'code', equals(0x703)).having(
+            (e) => e.name, 'name', equals('ADSERR_DEVICE_INVALIDOFFSET')),
+      ),
+    );
+  });
+
+  test('ams_error', () async {
+    // AMS-header `errorCode` level: the mock sets the AMS errorCode to 0x0007,
+    // surfaced from the header BEFORE any payload decode. The client maps it to
+    // GLOBALERR_MISSING_ROUTE. Asserting it is an AdsException (NOT a transport
+    // AdsTimeout/AdsConnection exception) proves the distinct family, live.
+    final client = await connectClient();
+
+    await expectLater(
+      client.read(
+        indexGroup: kErrAmsGroup,
+        indexOffset: 0x007,
+        length: 4,
+        timeout: requestTimeout,
+      ),
+      throwsA(
+        isA<AdsException>()
+            .having((e) => e.code, 'code', equals(0x0007))
+            .having(
+                (e) => e,
+                'not a transport error',
+                isNot(anyOf(isA<AdsTimeoutException>(),
+                    isA<AdsConnectionException>()))),
+      ),
+    );
   });
 }
