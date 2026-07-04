@@ -21,7 +21,13 @@ findings:
   warning: 3
   info: 6
   total: 9
-status: issues_found
+resolved:
+  warning: 3
+open:
+  warning: 0
+  info: 6
+fixed_at: 2026-07-04
+status: warnings_resolved
 ---
 
 # Phase 3: Code Review Report
@@ -66,6 +72,8 @@ if (... || bodyLen < 16 || static_cast<size_t>(writeLength) > bodyLen - 16) { br
 ```
 (or add `length > kMaxFrameBytes` / `writeLength > kMaxFrameBytes` guards before the additions, matching READ).
 
+**Resolution:** fixed: 10504a8 — WRITE and READ_WRITE checks rewritten in overflow-free subtraction form (`bodyLen < 12/16 || length > bodyLen - 12/16`); the kMaxFrameBytes comment now states exactly what the cap does and does not cover. READ_WRITE's `readLength > kMaxFrameBytes` cap was already present (cap parity with READ confirmed). Mock rebuilt; `--selftest` golden byte-identical.
+
 ### WR-02: Parity port `testAdsReadReqEx2` write-then-read loop is vacuous — its assertions cannot fail even if Write is broken
 
 **File:** `test/integration/ads_parity_test.dart:110-130` (root cause: `test_harness/mock_server.cpp:535-541`)
@@ -88,6 +96,8 @@ await client.write(indexGroup: group, indexOffset: offset, data: zero, ...);
 ```
 Alternatively, make the mock answer a READ of a missing key with `ADSERR_DEVICE_SRVNOTSUPP` instead of zero-fill (closer to real PLC behavior, and it would also make the invalid-group case injectable without the magic group).
 
+**Resolution:** fixed: 60ccfac — the test now (1) documents the mock's zero-fill default by reading a never-written key `(0x4020, 0xBEEF)` and asserting zeros, then (2) writes a `[0x5A, 0xA5, 0x5A, 0xA5]` sentinel and asserts the exact pattern reads back (store proven live), then (3) writes zeros so the existing loop verifies the OVERWRITE rather than the zero-fill default. The C++-mirroring zero write is kept.
+
 ### WR-03: ADS payload wire layout duplicated between `AdsClient` methods and the `commands.dart` encoders — two sources of truth that can drift
 
 **File:** `lib/src/client/ads_client.dart:73-77, 92-97, 114-121, 154-159` (duplicating `lib/src/protocol/commands.dart:174-178, 197-202, 237-242, 263-270`)
@@ -98,6 +108,8 @@ Uint8List buildReadPayload(int indexGroup, int indexOffset, int length) { ... }
 // encodeReadRequest(...) => _frame(payload: buildReadPayload(...))
 // AdsClient.read(...)    => _command(AdsCommandId.read, buildReadPayload(...), timeout)
 ```
+
+**Resolution:** fixed: 26dfb01 — option (a): `commands.dart` now defines `buildReadPayload` / `buildWritePayload` / `buildWriteControlPayload` / `buildReadWritePayload` (named-parameter style matching the encoders, package-internal, NOT re-exported by `dart_ads.dart`); the four full-frame encoders and the four `AdsClient` payload sites both consume them, so each layout lives in exactly one place and stays pinned by the golden fixtures. No public signature changes; wire bytes unchanged (113/113 tests green, goldens byte-identical).
 
 ## Info
 
