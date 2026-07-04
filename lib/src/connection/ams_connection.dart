@@ -346,14 +346,27 @@ class AmsConnection {
     // Demux branch BEFORE the invoke-ID lookup (PROTO-04). Parse the nested
     // 0x08 stream and route each sample to its handle's controller (an
     // unregistered handle is silently ignored, C++ parity).
+    //
+    // This branch CONTAINS ITS OWN ERRORS BY DESIGN (threat T-5-02): the parse
+    // runs in a local try/catch that swallows any [MalformedFrameException] and
+    // bumps [droppedNotifications]. It must never rethrow — a hostile 0x08 frame
+    // reaching the `connect()` listener's `on MalformedFrameException` catch
+    // would `_failClose` the whole connection, letting one bad notification kill
+    // every other live subscription. A truly corrupt byte STREAM still poisons
+    // the assembler upstream and closes; only per-frame notification parse
+    // failures are contained here.
     if (header.commandId == AdsCommandId.deviceNotification) {
       notificationFrames++;
       final notificationPayload = Uint8List.sublistView(
         frame,
         AmsTcpHeader.byteLength + AmsHeader.byteLength,
       );
-      for (final n in parseNotificationStream(notificationPayload)) {
-        _demuxControllers[n.handle]?.add(n);
+      try {
+        for (final n in parseNotificationStream(notificationPayload)) {
+          _demuxControllers[n.handle]?.add(n);
+        }
+      } catch (_) {
+        droppedNotifications++;
       }
       return;
     }
