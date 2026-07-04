@@ -79,3 +79,7 @@ None. Both verb bodies are fully wired to live `AdsClient` calls; no placeholder
 ## Threat Flags
 
 None. No new network endpoints, auth paths, or schema surfaces beyond the plan's `<threat_model>`. The `--group/--offset/--len` parsing is length/format-guarded (`_parseAnyInt` → `FormatException` → exit 2) and typed decodes go through the length-guarded value-parsing seam (T-8-01c mitigated).
+
+## Self-Check: PASSED
+
+All created/modified files exist on disk; all five commits (40c9b71, 90417b5, 2690a9f, cf7f1fb, 9e17b92) are present in git history.
