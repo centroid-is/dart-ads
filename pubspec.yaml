@@ -4,6 +4,7 @@ description: >-
   symbol browse, sum commands, plus the `ads` CLI. Wire-compatible with the C++
   AdsLib, validated byte-for-byte.
 version: 0.1.0
+repository: https://github.com/centroid-is/dart-ads
 
 # No homepage/repository yet (no public remote) — omitting them keeps
 # `dart pub publish --dry-run` warning-free.
