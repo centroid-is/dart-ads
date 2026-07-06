@@ -85,7 +85,10 @@ const Map<int, AdsErrorEntry> _adsErrorTable = <int, AdsErrorEntry>{
     text: 'invalid parameter value(s)',
   ),
   0x070C: (name: 'ADSERR_DEVICE_NOTFOUND', text: 'not found (files, ...)'),
-  0x070D: (name: 'ADSERR_DEVICE_SYNTAX', text: 'syntax error in command or file'),
+  0x070D: (
+    name: 'ADSERR_DEVICE_SYNTAX',
+    text: 'syntax error in command or file'
+  ),
   0x070E: (name: 'ADSERR_DEVICE_INCOMPATIBLE', text: 'objects do not match'),
   0x070F: (name: 'ADSERR_DEVICE_EXISTS', text: 'object already exists'),
   0x0710: (name: 'ADSERR_DEVICE_SYMBOLNOTFOUND', text: 'symbol not found'),
@@ -269,5 +272,6 @@ class AdsException implements Exception {
   bool get isClientError => code >= 0x0740 && code <= 0x07FF;
 
   @override
-  String toString() => 'AdsException: ADS error ${_hex(code)} ($name): $message';
+  String toString() =>
+      'AdsException: ADS error ${_hex(code)} ($name): $message';
 }

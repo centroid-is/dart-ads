@@ -265,7 +265,8 @@ List<AdsNotification> parseNotificationStream(Uint8List payload) {
       // Defensive copy so the returned data does not alias the source buffer.
       final data = Uint8List.fromList(payload.sublist(off, off + size));
       off += size;
-      out.add(AdsNotification(handle: handle, timestamp: timestamp, data: data));
+      out.add(
+          AdsNotification(handle: handle, timestamp: timestamp, data: data));
     }
   }
   return out;

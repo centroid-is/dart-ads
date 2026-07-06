@@ -95,8 +95,7 @@ final class AdsSymbolInfo {
   final int flags;
 
   @override
-  String toString() =>
-      'AdsSymbolInfo(name: $name, typeName: $typeName, '
+  String toString() => 'AdsSymbolInfo(name: $name, typeName: $typeName, '
       'indexGroup: 0x${indexGroup.toRadixString(16)}, '
       'indexOffset: 0x${indexOffset.toRadixString(16)}, size: $size, '
       'dataTypeId: $dataTypeId, flags: 0x${flags.toRadixString(16)})';

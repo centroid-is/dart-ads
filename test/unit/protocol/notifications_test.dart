@@ -43,8 +43,8 @@ Uint8List _buildStream(List<_Stamp> stamps, {bool selfDescribing = true}) {
   final bodyBytes = body.toBytes();
   final out = BytesBuilder();
   final len = ByteData(4)
-    ..setUint32(
-        0, selfDescribing ? bodyBytes.length : bodyBytes.length + 1, Endian.little);
+    ..setUint32(0, selfDescribing ? bodyBytes.length : bodyBytes.length + 1,
+        Endian.little);
   out.add(len.buffer.asUint8List());
   out.add(bodyBytes);
   return out.toBytes();
@@ -207,14 +207,20 @@ void main() {
 
     test('parses a nested 2-stamp x 2-sample frame into 4 notifications', () {
       final payload = _buildStream([
-        (ticks: ftA, samples: [
-          (handle: 10, data: [0xAA]),
-          (handle: 11, data: [0xBB, 0xCC]),
-        ]),
-        (ticks: ftB, samples: [
-          (handle: 20, data: [0x01, 0x02, 0x03]),
-          (handle: 21, data: [0x04]),
-        ]),
+        (
+          ticks: ftA,
+          samples: [
+            (handle: 10, data: [0xAA]),
+            (handle: 11, data: [0xBB, 0xCC]),
+          ]
+        ),
+        (
+          ticks: ftB,
+          samples: [
+            (handle: 20, data: [0x01, 0x02, 0x03]),
+            (handle: 21, data: [0x04]),
+          ]
+        ),
       ]);
 
       final notes = parseNotificationStream(payload);
@@ -241,9 +247,12 @@ void main() {
 
     test('sample data is a defensive copy that does not alias the input', () {
       final payload = _buildStream([
-        (ticks: ftA, samples: [
-          (handle: 1, data: [0x7F]),
-        ]),
+        (
+          ticks: ftA,
+          samples: [
+            (handle: 1, data: [0x7F]),
+          ]
+        ),
       ]);
       final notes = parseNotificationStream(payload);
       final dataOffset = payload.length - 1;
@@ -253,9 +262,12 @@ void main() {
 
     test('parses a single 1x1 frame into 1 notification', () {
       final payload = _buildStream([
-        (ticks: ftA, samples: [
-          (handle: 42, data: [0xDE, 0xAD]),
-        ]),
+        (
+          ticks: ftA,
+          samples: [
+            (handle: 42, data: [0xDE, 0xAD]),
+          ]
+        ),
       ]);
       final notes = parseNotificationStream(payload);
       expect(notes.length, 1);
@@ -277,9 +289,12 @@ void main() {
 
     test('throws when length + 4 != payload.length', () {
       final payload = _buildStream([
-        (ticks: ftA, samples: [
-          (handle: 1, data: [0x01]),
-        ]),
+        (
+          ticks: ftA,
+          samples: [
+            (handle: 1, data: [0x01]),
+          ]
+        ),
       ], selfDescribing: false);
       expect(
         () => parseNotificationStream(payload),
@@ -290,7 +305,8 @@ void main() {
     test('throws on a stamp header that overruns the buffer', () {
       // stamps=1 but only 4 bytes of stamp header present (needs 12).
       final body = BytesBuilder();
-      body.add((ByteData(4)..setUint32(0, 1, Endian.little)).buffer.asUint8List());
+      body.add(
+          (ByteData(4)..setUint32(0, 1, Endian.little)).buffer.asUint8List());
       body.add(Uint8List(4)); // truncated stamp header
       final bodyBytes = body.toBytes();
       final out = BytesBuilder();
@@ -307,7 +323,8 @@ void main() {
     test('throws on a sample whose size exceeds the remaining bytes', () {
       // One stamp, one sample declaring size 100 with no data bytes present.
       final body = BytesBuilder();
-      body.add((ByteData(4)..setUint32(0, 1, Endian.little)).buffer.asUint8List());
+      body.add(
+          (ByteData(4)..setUint32(0, 1, Endian.little)).buffer.asUint8List());
       body.add((ByteData(12)
             ..setUint64(0, ftA, Endian.little)
             ..setUint32(8, 1, Endian.little))

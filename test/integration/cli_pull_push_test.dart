@@ -57,7 +57,8 @@ void main() {
   /// Parses a written snapshot file into a `name -> hex value` map (only items
   /// that carry a value).
   Map<String, String> valuesOf(String path) {
-    final doc = jsonDecode(File(path).readAsStringSync()) as Map<String, Object?>;
+    final doc =
+        jsonDecode(File(path).readAsStringSync()) as Map<String, Object?>;
     final symbols = doc['symbols'] as List;
     return <String, String>{
       for (final s in symbols.cast<Map<String, Object?>>())
@@ -106,7 +107,8 @@ void main() {
   test('pull -> push -> pull round-trips losslessly with an all-pass report',
       () async {
     final first = '${tmp.path}/first.json';
-    expect((await runCli(<String>['pull', '--values', '--out', first])).exitCode,
+    expect(
+        (await runCli(<String>['pull', '--values', '--out', first])).exitCode,
         0);
     final before = valuesOf(first);
     expect(before, hasLength(4));

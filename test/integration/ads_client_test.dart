@@ -235,8 +235,7 @@ void main() {
           SumWriteRequest(
             indexGroup: group,
             indexOffset: i * 0x10,
-            data: Uint8List.fromList(
-                [0x10 + i, 0x20 + i, 0x30 + i, 0x40 + i]),
+            data: Uint8List.fromList([0x10 + i, 0x20 + i, 0x30 + i, 0x40 + i]),
           ),
       ];
 

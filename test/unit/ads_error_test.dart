@@ -31,7 +31,8 @@ void main() {
   });
 
   group('AdsException.fromCode', () {
-    test('device code: isDeviceError true, isClientError false, code round-trips',
+    test(
+        'device code: isDeviceError true, isClientError false, code round-trips',
         () {
       final ex = AdsException.fromCode(0x0703);
       expect(ex.code, equals(0x0703));

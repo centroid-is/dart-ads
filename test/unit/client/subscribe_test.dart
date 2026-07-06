@@ -134,7 +134,8 @@ void main() {
 
       expect(fake.written, hasLength(1));
       final frame = fake.written.single;
-      expect(outboundHeader(frame).commandId, AdsCommandId.addDeviceNotification);
+      expect(
+          outboundHeader(frame).commandId, AdsCommandId.addDeviceNotification);
 
       final payload = outboundPayload(frame);
       expect(payload, hasLength(40)); // 24 fields + 16 reserved

@@ -147,7 +147,8 @@ void main() {
     );
   });
 
-  test('released handle reuse throws 0x710 and invalidates AdsHandle', () async {
+  test('released handle reuse throws 0x710 and invalidates AdsHandle',
+      () async {
     // T-7-05 staleness. Two proofs on one released handle:
     //   (a) a RAW readByHandle on a released handle throws 0x710;
     //   (b) reusing it THROUGH an AdsHandle throws 0x710 once, marks the handle
@@ -183,7 +184,8 @@ void main() {
     await expectLater(
       handle.read(4, timeout: requestTimeout),
       throwsA(isA<StateError>()),
-      reason: 'a reused invalid handle throws StateError, not another device op',
+      reason:
+          'a reused invalid handle throws StateError, not another device op',
     );
     await expectLater(
       handle.write(Uint8List(4), timeout: requestTimeout),

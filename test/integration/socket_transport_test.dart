@@ -53,7 +53,8 @@ void main() {
     await conn.close();
   });
 
-  test('SocketTransport reports a dotted local address once connected', () async {
+  test('SocketTransport reports a dotted local address once connected',
+      () async {
     final transport = SocketTransport();
 
     // Before connect the local end is unbound: no address yet.

@@ -84,9 +84,8 @@ void main() {
 
       // Wait (bounded) for the first non-empty streamed line: `dart run` pays a
       // cold compile before the program prints, hence the generous ceiling.
-      final firstLine = await stdoutLines
-          .firstWhere((l) => l.trim().isNotEmpty)
-          .timeout(
+      final firstLine =
+          await stdoutLines.firstWhere((l) => l.trim().isNotEmpty).timeout(
         const Duration(seconds: 60),
         onTimeout: () {
           proc.kill(ProcessSignal.sigkill);
@@ -102,7 +101,8 @@ void main() {
       final parts = firstLine.trim().split(RegExp(r'\s+'));
       expect(parts, hasLength(2),
           reason: 'a sample line is a timestamp and a hex value: "$firstLine"');
-      final ts = DateTime.parse(parts[0]); // throws -> test failure if not ISO8601
+      final ts =
+          DateTime.parse(parts[0]); // throws -> test failure if not ISO8601
       expect(ts.isUtc, isTrue,
           reason: 'the FILETIME sample stamp renders as a UTC ISO8601 instant');
       expect(parts[1], startsWith('0x'),
