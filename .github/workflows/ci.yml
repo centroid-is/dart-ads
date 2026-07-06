@@ -42,7 +42,7 @@ jobs:
       - name: Set up Dart
         uses: dart-lang/setup-dart@v1
         with:
-          sdk: stable
+          sdk: 3.11.5  # pinned: formatter output must match the committed formatting
 
       - name: Install dependencies
         run: dart pub get
@@ -91,7 +91,7 @@ jobs:
       - name: Set up Dart
         uses: dart-lang/setup-dart@v1
         with:
-          sdk: stable
+          sdk: 3.11.5  # pinned: formatter output must match the committed formatting
 
       - name: Install build toolchain
         run: |
