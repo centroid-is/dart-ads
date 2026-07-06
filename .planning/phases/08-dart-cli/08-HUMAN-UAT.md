@@ -14,7 +14,7 @@ updated: 2026-07-04T18:36:51Z
 
 ### 1. GitHub CI green (also tracked from Phase 1)
 expected: Push to remote; analyze/format/unit+integration jobs pass (Linux CMake mock build).
-result: [pending]
+result: PASSED 2026-07-06 — CI green on run 28782533044
 
 ### 2. All 7 CLI verbs against a real Beckhoff/TwinCAT PLC
 expected: browse/read/write/subscribe/pull/push/action behave as mock-verified (known limitation: mock-only so far; LocalRouterTarget needs the v2 0x1000 registration for a real local router — use direct mode with a route configured on the PLC).
@@ -23,9 +23,9 @@ result: [pending]
 ## Summary
 
 total: 2
-passed: 0
+passed: 1
 issues: 0
-pending: 2
+pending: 1
 skipped: 0
 blocked: 0
 
